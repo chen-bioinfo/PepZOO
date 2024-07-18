@@ -1,9 +1,5 @@
-
-<img align="right" src="static/Frog_noOutline_2.png" width="200"> 
-
 # Directed Evolutionary of Peptides using Multi-Objective Zeroth-Order Optimization
 
-[![DOI](https://zenodo.org/badge/452699400.svg)](https://zenodo.org/badge/latestdoi/452699400)
 ### Data
 
 Data is available via [DVC](https://dvc.org/) and can be obtained by running  following commands within repo root directory:
