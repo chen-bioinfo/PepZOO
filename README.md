@@ -1,7 +1,7 @@
 
 <img align="right" src="static/Frog_noOutline_2.png" width="200"> 
 
-# HydrAMP: a deep generative model for antimicrobial peptide discovery
+# Directed Evolutionary of Peptides using Multi-Objective Zeroth-Order Optimization
 
 [![DOI](https://zenodo.org/badge/452699400.svg)](https://zenodo.org/badge/latestdoi/452699400)
 ### Data
