@@ -1,38 +1,5 @@
 # Directed Evolutionary of Peptides using Multi-Objective Zeroth-Order Optimization
 
-### Data
-
-Data is available via [DVC](https://dvc.org/) and can be obtained by running  following commands within repo root directory:
-
-```
-pip install dvc[gdrive]
-dvc pull
-```
-This puts all data in appropriate directories, which makes code ready-to-be-run. You can also request specific directories/files. Please see [dvc pull doc](https://dvc.org/doc/command-reference/pull). You will be prompted to your Google account for access.
-
-DVC ensures data version is paired with code. Alternatively, you can download data directly through [Google Drive](https://drive.google.com/drive/folders/1IwJjwSKpXYWWALKXM8nghqmlSvyu3BYq?usp=sharing). 
-
-#### Available data: 
-- data - training data for peptides < 25 AA (16.8 MB)
-- models - checkpoints of HydrAMP, PepCVAE, and Basic models for every training epoch (466 MB)
-- results - dumped generation results for every model. Required for running comparison notebooks (832 MB)
-- wheels - custom TensorFlow packages (1 GB). See [Required software](#required-software) below. 
-
-
-### Required software
-
-HydrAMP was tested under Linux and Windows running python 3.8. Other python versions might work as well but it is not guaranteed. All required packages are enclosed in `setup.py`. Run:
-
-```console
-pip install .
-```
-
-to install HydrAMP and other required packages. This should take up to 10 minutes with 50Mbps internet.
-
-
-If you plan to retrain HydrAMP, you are going to need custom TensorFlow wheels that have some cherry-picked bug fixes. It is not possible to use TensorFlow version where these bugs are fixed since API changed significantly (Keras-Tensorflow side) and this would require to rewrite training code. These wheels can be found under  in `wheels/` via DVC
-
-
 
 ### How to generate peptides with HydrAMP
 
