@@ -55,7 +55,7 @@ The analysis codes are all located in the folder 'PepZOO/analyze'
 | case2.ipynb     | Analysis of generated peptides for case2       |
 | case3.ipynb     | Analysis of generated peptides for case3       |
 | PhysicochemicalProperties.ipynb  | Analysis of physicochemicalProperties of generated peptides  |
-| binding_affinity.ipynb   | Analysis of generated peptides according docking energy   |
+| affinity.ipynb   | Analysis of generated peptides according to docking energy   |
 | affinity_toxicity.ipynb  | Analysis of generated peptides in terms of binding affinity and toxicity  |
 
 
