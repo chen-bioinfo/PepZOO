@@ -8,7 +8,7 @@
 <div align=center><img src=img/framework.png></div>
 
 ## Required software
-CAMP is needed to predict the peptide-protein interaction of generated peptides to the target protein, you should download this tool from github (https://github.com/twopin/CAMP) and put it in PepZOO/tools/. In order to run CAMP correctly, you should download IUPred2A and SCRATCH-1D to get the secondary structure and intrinsic disorder of proteins. Please refer to CAMP for usage details. Toxinpred3 is required to predict the toxicity of peptides, you can download it from github (https://github.com/raghavagps/toxinpred3) and use it according to the usage details. All tools should be located in PepZOO/tools/.
+CAMP is needed to predict the peptide-protein interaction between generated peptides and the target protein, you should download this tool from github (https://github.com/twopin/CAMP) and put it in PepZOO/tools/. In order to run CAMP correctly, you should download IUPred2A and SCRATCH-1D to get the intrinsic disorder and secondary structure of proteins, please refer to CAMP for usage details. Toxinpred3 is required to predict the toxicity of peptides, you can download it from github (https://github.com/raghavagps/toxinpred3) and use it according to the usage details. All tools should be located in PepZOO/tools/.
 
 ## 🚀 How to run?
 ```
