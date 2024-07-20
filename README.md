@@ -21,17 +21,23 @@ conda create -n pepzoo python==3.8
 conda activate pepzoo
 
 # 3. the key elements of 'pepzoo' operating environment are listed below(python==3.8):
-transformers==4.28.1
-torch==1.9.0+cu111 (You can download it from the pytorch(https://pytorch.org/get-started/previous-versions) )
-peft==0.3.0
-modlamp==4.3.0
-pandas==1.4.0
-datasets==2.12.0
-numpy==1.23.5
-tqdm==4.65.0
-matplotlib==3.7.1
-seaborn==0.12.2
-tensorboard==2.13.0
+tensorflo=~=2.2.1
+tensorflow-probability==0.10.0
+Keras==2.3.1
+Keras-Applications==1.0.8
+Keras-Preprocessing==1.1.2
+cloudpickle==1.4.1
+numpy==1.18.5
+pandas==1.1.4
+scikit-learn==0.23.2
+modlamp==4.2.3
+matplotlib==3.3.2
+protobuf==3.14.0
+seaborn==0.11.0
+setuptools==50.3.1
+joblib==0.17.0
+argparse
+tqdm==4.51.0
 
 # 4. generate sequence
 conda activate pepzoo
