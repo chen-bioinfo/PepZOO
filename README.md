@@ -17,6 +17,7 @@ git clone https://github.com/chen-bioinfo/PepZOO.git
 cd PepZOO
 
 # 2. Creating a virtual environment
+conda create -n pepzoo python==3.8
 conda activate pepzoo
 
 # 3. the key elements of 'pepzoo' operating environment are listed below(python==3.8):
@@ -33,6 +34,7 @@ seaborn==0.12.2
 tensorboard==2.13.0
 
 # 4. generate sequence
+conda activate pepzoo
 cd PepZOO/run
 python run_amp.py 
 python run_mic.py
