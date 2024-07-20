@@ -7,6 +7,12 @@
 ## 🧬 Model Structure
 <div align=center><img src=img/framework1.png></div>
 
+## 🚀 Generate
+'''
+# 1. Clone this repository
+git clone https://github.com/chen-bioinfo/PepZOO.git
+cd PepZOO
+'''
 Interface for generating peptides is enclosed in `HYDRAmpGenerator` class. Latest model can be found under `models/HydrAMP/37`  and latest decomposer can be found under `models/HydrAMP/pca_decomposer.joblib`.  You can find useful scripts under `amp/inference/scripts`.
 
 Initialize object with path to model and decomposer:
