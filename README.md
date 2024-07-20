@@ -8,7 +8,7 @@
 <div align=center><img src=img/framework1.png></div>
 
 ## Required software
-
+CAMP is needed to predict the peptide-protein interaction of generated peptides to the target protein, you should download this tool from github (https://github.com/twopin/CAMP) and put it in PepZOO/tools/. In order to run CAMP correctly, you should download IUPred2A and SCRATCH-1D to get the secondary structure and intrinsic disorder of proteins. Please refer to CAMP for usage details.
 
 ## 🚀 How to run?
 ```
