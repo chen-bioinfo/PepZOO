@@ -45,11 +45,11 @@ cd PepZOO/run
 python run_amp.py 
 python run_mic.py
 python run_amp_mic.py
-python run_binding.py
-python run_toxicity.py
-python run_binding_toxicity.py
-python run_basic.py
+python run_cvae.py
 python run_pepcvae.py
+python run_affinity.py
+python run_toxicity.py
+python run_affinity_toxicity.py
 ```
 
 ## 🧐 Analysis
