@@ -488,6 +488,7 @@ class HydrAMPGenerator:
         good_mic = mic.T[selective_index, good]
         return good_peptides, good_amp, good_mic
 
+    # compute the zeroth-order gradient for antimicrobial function and activity optimization
     def estimate_gradient(self, z, q, beta, variance):
         amp_conditions = mic_conditions = np.ones((len(z), 1))
         conditioned = np.hstack([
@@ -518,6 +519,7 @@ class HydrAMPGenerator:
                 grads[j] += beta * (float)(old_amp[j][0]-new_amp[i*len(z)+j][0] + old_mic[j][0]-new_mic[i*len(z)+j][0]) * u[i][j]        
         return grads
 
+    # compute the zeroth-order gradient for antimicrobial function optimization only
     def estimate_gradient_amp(self, z, q, beta, variance):
         amp_conditions = mic_conditions = np.ones((len(z), 1))
         conditioned = np.hstack([
@@ -546,6 +548,7 @@ class HydrAMPGenerator:
                 grads[j] += beta * (float)(old_amp[j][0]-new_amp[i*len(z)+j][0]) * u[i][j]        
         return grads
 
+    # compute the zeroth-order gradient for antimicrobial activity optimization only
     def estimate_gradient_mic(self, z, q, beta, variance):
         amp_conditions = mic_conditions = np.ones((len(z), 1))
         conditioned = np.hstack([
@@ -575,7 +578,7 @@ class HydrAMPGenerator:
         return grads
 
 
-
+    # the optimization of antimicrobial function
     def amp_optimization(self, sequences: List[str], seed: int,
                             n_attempts: int = 100, temp: float = 5.0, **kwargs) -> Dict[Any, Dict[str, Any]]:
         """
@@ -584,21 +587,15 @@ class HydrAMPGenerator:
         @param n_attempts: how many times a single latent vector is decoded - for normal Softmax models it should be set
         to 1 as every decoding call returns the same peptide.
         @param temp: creativity parameter. Controls latent vector sigma scaling
-        @param seed:
-        @param kwargs:additional boolean arguments for filtering. This include
-        - filter_positive_clusters
-        - filter_repetitive_clusters or filter_hydrophobic_clusters
-        - filter_cysteins
-        - filter_known_amps
-
-        @return: dict, each key corresponds to a single input sequence.
+        @param seed: random seed
         """
 
-        # random seed
+        # set random seed
         set_seed(seed)
 
         block_size = len(sequences)
         padded_sequences = du_sequence.pad(du_sequence.to_one_hot(sequences))
+
         # variance
         sigmas = self.get_sigma(padded_sequences)
         # AMP probability of original sequences
@@ -616,8 +613,8 @@ class HydrAMPGenerator:
         props = calculate_physchem_prop(sequences)
 
         # save result
-        hydramp_wf = open('results/amp/Hydramp/result.csv', 'a', encoding='utf-8')
-        pepzoo_wf = open('results/amp/PepZOO/result.csv', 'a', encoding='utf-8')
+        hydramp_wf = open('results/HydrAMP/result.csv', 'a', encoding='utf-8')
+        pepzoo_wf = open('results/PepZOO/amp/result.csv', 'a', encoding='utf-8')
         hydramp_writer = csv.writer(hydramp_wf)
         pepzoo_writer = csv.writer(pepzoo_wf)
         hydramp_writer.writerow(['description','sequence', 'amp', 'mic', 'length', 'hydrophobicity',
@@ -683,7 +680,7 @@ class HydrAMPGenerator:
             if filtered_peptides[i] != None:
                 for j in range(len(filtered_peptides[i])):
                     hydramp_writer.writerow([
-                        f'{i}_HydrampOpt',
+                        f'{i}_HydrAMP',
                         filtered_peptides[i][j]['sequence'],
                         filtered_peptides[i][j]['amp'],
                         filtered_peptides[i][j]['mic'], 
@@ -712,7 +709,7 @@ class HydrAMPGenerator:
         for t in tqdm(range(attempts)):
             # # compute zeroth-order gradient
             z.grad = torch.from_numpy(self.estimate_gradient_amp(z, Q, beta, variance).astype('float32'))
-            # update
+            # update the embedding of peptides using zeroth order gradient
             adam.step()
 
             conditioned = np.hstack([
@@ -741,7 +738,7 @@ class HydrAMPGenerator:
                 if filtered_peptides[i] != None:
                     if filtered_peptides[i][0]['sequence'] not in seqs_dic[i].keys():
                         pepzoo_writer.writerow([
-                            f'{i}_PepZOOOpt',
+                            f'{i}_PepZOO',
                             filtered_peptides[i][0]['sequence'], 
                             filtered_peptides[i][0]['amp'],
                             filtered_peptides[i][0]['mic'], 
@@ -755,6 +752,7 @@ class HydrAMPGenerator:
         hydramp_wf.close()
         pepzoo_wf.close()
 
+    # the optimization of antimicrobial activity
     def mic_optimization(self, sequences: List[str], seed: int,
                             n_attempts: int = 100, temp: float = 5.0, **kwargs) -> Dict[Any, Dict[str, Any]]:
         """
@@ -765,41 +763,34 @@ class HydrAMPGenerator:
         @param n_attempts: how many times a single latent vector is decoded - for normal Softmax models it should be set
         to 1 as every decoding call returns the same peptide.
         @param temp: creativity parameter. Controls latent vector sigma scaling
-        @param seed:
-        @param kwargs:additional boolean arguments for filtering. This include
-        - filter_positive_clusters
-        - filter_repetitive_clusters or filter_hydrophobic_clusters
-        - filter_cysteins
-        - filter_known_amps
-
-        @return: dict, each key corresponds to a single input sequence.
+        @param seed: random seed
         """
 
-        # 设置随机种子
+        # random seed
         set_seed(seed)
-        # 序列数目
+
         block_size = len(sequences)
-        # 补全序列
+        # padding
         padded_sequences = du_sequence.pad(du_sequence.to_one_hot(sequences))
-        # 方差
+        # variance
         sigmas = self.get_sigma(padded_sequences)
-        # 原始序列的amp值
+        # amp score of prototypes
         amp_org = self._amp_classifier.predict(padded_sequences, verbose=1, batch_size=80000)
-        # 原始序列的mic值
+        # mic score of prototypes
         mic_org = self._mic_classifier.predict(padded_sequences, verbose=1, batch_size=80000)
-        # 将每条序列复制n_attempts条
+        # 
         padded_sequences = np.vstack([padded_sequences] * n_attempts).reshape(-1, 25)
-        # 中间编码
+        # embedding
         z = self._encoder.predict(padded_sequences, verbose=1, batch_size=80000)
 
         amp_stacked = np.vstack([amp_org] * n_attempts)
         mic_stacked = np.vstack([mic_org] * n_attempts)
-        # 理化性质
+        # physicochemical properties
         props = calculate_physchem_prop(sequences)
 
         # save result
-        hydramp_wf = open('results/mic/Hydramp/result.csv', 'a', encoding='utf-8')
-        pepzoo_wf = open('results/mic/PepZOO/result.csv', 'a', encoding='utf-8')
+        hydramp_wf = open('results/HydrAMP/result.csv', 'a', encoding='utf-8')
+        pepzoo_wf = open('results/PepZOO/mic/result.csv', 'a', encoding='utf-8')
         hydramp_writer = csv.writer(hydramp_wf)
         pepzoo_writer = csv.writer(pepzoo_wf)
         hydramp_writer.writerow(['description','sequence', 'amp', 'mic', 'length', 'hydrophobicity',
@@ -830,45 +821,45 @@ class HydrAMPGenerator:
                 props['charge'][i], 
                 props['isoelectric_point'][i]
             ])
-        # 生成扰动向量
+        # Perturbation Vector
         noise = np.random.normal(loc=0, scale=temp * np.vstack([sigmas] * n_attempts), size=z.shape)
-        # 编码向量=原始中间向量+扰动
+        # 
         encoded = z + noise
-        # 控制条件（amp值和mic值）
+        # condition
         amp_condition = mic_condition = np.ones((len(padded_sequences), 1))
-        # 将编码和控制条件拼接
+        
         conditioned = np.hstack([
             encoded,
             amp_condition,
             mic_condition,
         ])
-        # 解码
+        # decode
         decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
         new_peptides = np.argmax(decoded, axis=2)
-        # 计算amp值
+        # amp score of generated peptides
         new_amp = self._amp_classifier.predict(new_peptides, verbose=1, batch_size=80000)
-        # 计算mic值
+        # mic score of generated peptides
         new_mic = self._mic_classifier.predict(new_peptides, verbose=1, batch_size=80000)
-        # 筛选规则为improvement：生成序列的amp值和mic值高于原始序列的amp值和mic值
+        
         better = new_amp > amp_stacked.reshape(-1, 1)
         better = better & (new_mic > mic_stacked.reshape(-1, 1))
 
         better = better.flatten()
-        # 将数字表示的序列还原为字符表示的序列
+       
         new_peptides = np.array([translate_peptide(x) for x in new_peptides])
-        # 过滤
+        
         new_peptides, new_amp, new_mic, better = slice_blocks((new_peptides, new_amp, new_mic, better), block_size)
         # mask = get_filtering_mask(sequences=new_peptides, filtering_options=kwargs)
         # mask &= better
         filtered_peptides = _dispose_into_bucket(better, sequences, new_peptides, new_amp, new_mic, n_attempts,
                                                  block_size)
         filtered_peptides = self._encapsulate_sequential_results(filtered_peptides)
-        # 保存结果
+        # save result
         for i in range(block_size):
             if filtered_peptides[i] != None:
                 for j in range(len(filtered_peptides[i])):
                     hydramp_writer.writerow([
-                        f'{i}_HydrampOpt',
+                        f'{i}_HydrAMP',
                         filtered_peptides[i][j]['sequence'],
                         filtered_peptides[i][j]['amp'],
                         filtered_peptides[i][j]['mic'], 
@@ -925,7 +916,7 @@ class HydrAMPGenerator:
                 if filtered_peptides[i] != None:
                     if filtered_peptides[i][0]['sequence'] not in seqs_dic[i].keys():
                         pepzoo_writer.writerow([
-                            f'{i}_PepZOOOpt',
+                            f'{i}_PepZOO',
                             filtered_peptides[i][0]['sequence'], 
                             filtered_peptides[i][0]['amp'],
                             filtered_peptides[i][0]['mic'], 
@@ -938,7 +929,7 @@ class HydrAMPGenerator:
                     seqs_dic[i][filtered_peptides[i][0]['sequence']] = i
         hydramp_wf.close()
         pepzoo_wf.close()
-
+    # the optimization of antimicrobial function and activity
     def amp_mic_optimization(self, sequences: List[str], seed: int,
                             n_attempts: int = 100, temp: float = 5.0, **kwargs) -> Dict[Any, Dict[str, Any]]:
         """
@@ -947,45 +938,37 @@ class HydrAMPGenerator:
         @param n_attempts: how many times a single latent vector is decoded - for normal Softmax models it should be set
         to 1 as every decoding call returns the same peptide.
         @param temp: creativity parameter. Controls latent vector sigma scaling
-        @param seed:
-        @param kwargs:additional boolean arguments for filtering. This include
-        - filter_positive_clusters
-        - filter_repetitive_clusters or filter_hydrophobic_clusters
-        - filter_cysteins
-        - filter_known_amps
-
-        @return: dict, each key corresponds to a single input sequence.
+        @param seed: random seed
         """
 
-        # 设置随机种子
         set_seed(seed)
-        # 序列数目
+
         block_size = len(sequences)
-        # 补全序列
+        # padding
         padded_sequences = du_sequence.pad(du_sequence.to_one_hot(sequences))
-        # 方差
+        # variance
         sigmas = self.get_sigma(padded_sequences)
-        # 原始序列的amp值
+        # amp score of prototypes
         amp_org = self._amp_classifier.predict(padded_sequences, verbose=1, batch_size=80000)
-        # 原始序列的mic值
+        # mic score of prototypes
         mic_org = self._mic_classifier.predict(padded_sequences, verbose=1, batch_size=80000)
-        # 将每条序列复制n_attempts条
+
         padded_sequences = np.vstack([padded_sequences] * n_attempts).reshape(-1, 25)
-        # 中间编码
+        # embedding
         z = self._encoder.predict(padded_sequences, verbose=1, batch_size=80000)
 
         amp_stacked = np.vstack([amp_org] * n_attempts)
         mic_stacked = np.vstack([mic_org] * n_attempts)
-        # 理化性质
+        # physicochemical properties
         props = calculate_physchem_prop(sequences)
 
         # save result
-        hydramp_wf = open('results/amp_mic/Hydramp/result.csv', 'a', encoding='utf-8')
-        pepzoo_wf = open('results/amp_mic/PepZOO/result.csv', 'a', encoding='utf-8')
+        hydramp_wf = open('results/HydrAMP/result.csv', 'a', encoding='utf-8')
+        pepzoo_wf = open('results/PepZOO/amp_mic/result.csv', 'a', encoding='utf-8')
         hydramp_writer = csv.writer(hydramp_wf)
         pepzoo_writer = csv.writer(pepzoo_wf)
 
-        f2 = open('results/amp_mic/PepZOO/result_4_novelty.csv', 'a', encoding='utf-8')
+        f2 = open('results/PepZOO/amp_mic/result_4_novelty.csv', 'a', encoding='utf-8')
         writer2 = csv.writer(f2)
 
         hydramp_writer.writerow(['description','sequence', 'amp', 'mic', 'length', 'hydrophobicity',
@@ -1025,45 +1008,44 @@ class HydrAMPGenerator:
                 mic_org[i][0], 
             ])
 
-        # 生成扰动向量
+        # Perturbation Vector
         noise = np.random.normal(loc=0, scale=temp * np.vstack([sigmas] * n_attempts), size=z.shape)
-        # 编码向量=原始中间向量+扰动
+        
         encoded = z + noise
-        # 控制条件（amp值和mic值）
+        # condition
         amp_condition = mic_condition = np.ones((len(padded_sequences), 1))
-        # 将编码和控制条件拼接
+        
         conditioned = np.hstack([
             encoded,
             amp_condition,
             mic_condition,
         ])
-        # 解码
+
         decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
         new_peptides = np.argmax(decoded, axis=2)
-        # 计算amp值
+
         new_amp = self._amp_classifier.predict(new_peptides, verbose=1, batch_size=80000)
-        # 计算mic值
         new_mic = self._mic_classifier.predict(new_peptides, verbose=1, batch_size=80000)
-        # 筛选规则为improvement：生成序列的amp值和mic值高于原始序列的amp值和mic值
+        
         better = new_amp > amp_stacked.reshape(-1, 1)
         better = better & (new_mic > mic_stacked.reshape(-1, 1))
 
         better = better.flatten()
-        # 将数字表示的序列还原为字符表示的序列
+        
         new_peptides = np.array([translate_peptide(x) for x in new_peptides])
-        # 过滤
+        
         new_peptides, new_amp, new_mic, better = slice_blocks((new_peptides, new_amp, new_mic, better), block_size)
         # mask = get_filtering_mask(sequences=new_peptides, filtering_options=kwargs)
         # mask &= better
         filtered_peptides = _dispose_into_bucket(better, sequences, new_peptides, new_amp, new_mic, n_attempts,
                                                  block_size)
         filtered_peptides = self._encapsulate_sequential_results(filtered_peptides)
-        # 保存结果
+        # save result
         for i in range(block_size):
             if filtered_peptides[i] != None:
                 for j in range(len(filtered_peptides[i])):
                     hydramp_writer.writerow([
-                        f'{i+1}_HydrampOpt',
+                        f'{i+1}_HydrAMP',
                         filtered_peptides[i][j]['sequence'],
                         filtered_peptides[i][j]['amp'],
                         filtered_peptides[i][j]['mic'], 
@@ -1090,7 +1072,7 @@ class HydrAMPGenerator:
         for t in tqdm(range(attempts)):
             # # compute pesudo gradient
             z.grad = torch.from_numpy(self.estimate_gradient(z, Q, beta, variance).astype('float32'))
-            # update
+            # update embedding using zeroth order gradient
             adam.step()
 
             conditioned = np.hstack([
@@ -1120,7 +1102,7 @@ class HydrAMPGenerator:
                 if filtered_peptides[i] != None:
                     if filtered_peptides[i][0]['sequence'] not in seqs_dic[i].keys():
                         pepzoo_writer.writerow([
-                            f'{i+1}_PepZOOOpt',
+                            f'{i+1}_PepZOO',
                             filtered_peptides[i][0]['sequence'], 
                             filtered_peptides[i][0]['amp'],
                             filtered_peptides[i][0]['mic'], 
@@ -1141,14 +1123,12 @@ class HydrAMPGenerator:
         pepzoo_wf.close()
         f2.close()
 
-    # 多肽与蛋白质结合亲和力计算
-    def binding_predict(self, peptides: List[str], protein: str, model, task: str):
-        # 蛋白质序列数目
+    # predict the binding score of given peptides to the target protein
+    def affinity_predict(self, peptides: List[str], protein: str, model, task: str):
+        
         peps_len = len(peptides)
-        # 使用GPU进行矩阵运算
         device = torch.device('cuda:0')
-    ###################################################step1 二级结构信息获取#####################################################
-        # 将多肽与目标蛋白保存为fasta格式，用于获取二级结构信息
+    ################################################### step1 secondary structure #####################################################
         with open(f'data_prepare/{task}/amps.fasta', 'w') as wf:
             for i in range(peps_len):
                 f = open(f'data_prepare/{task}/{i+1}.fasta','w')
@@ -1162,43 +1142,43 @@ class HydrAMPGenerator:
         f.write('>target_protein'+'\n')
         f.write(protein+'\n')
         f.close()
-        # 调用SCRATCH-1D获取多肽序列二级结构信息
-        os.system(f"/geniusland/home/liuxianliang1/code/PepZOO_v2/tools/SCRATCH-1D_1.2/bin/run_SCRATCH-1D_predictors.sh\
+        # get secondary structure of peptides by SCRATCH-1D
+        os.system(f"tools/SCRATCH-1D_1.2/bin/run_SCRATCH-1D_predictors.sh\
              data_prepare/{task}/amps.fasta data_prepare/{task}/amps.out 256")
-        # 调用SCRATCH-1D获取靶点蛋白质二级结构信息
+        # get secondary structure of the target protein by SCRATCH-1D
         if not os.path.exists(f'data_prepare/{task}/protein.out.ss'):
-            os.system(f"/geniusland/home/liuxianliang1/code/PepZOO_v2/tools/SCRATCH-1D_1.2/bin/run_SCRATCH-1D_predictors.sh\
+            os.system(f"tools/SCRATCH-1D_1.2/bin/run_SCRATCH-1D_predictors.sh\
                 data_prepare/{task}/target_protein.fasta data_prepare/{task}/protein.out 256")    
-        # 保存序列和对应的二级结构信息
+        # save 
         wf = open(f'data_prepare/{task}/features.tsv','w')
         tsv_w = csv.writer(wf, delimiter='\t')
         tsv_w.writerow(['prot_seq', 'pep_seq', 'pep_concat_seq', 'prot_concat_seq'])
-        # 读取多肽序列二级结构信息
+        
         with open(f'data_prepare/{task}/amps.out.ss', 'r') as f:
             peps_data = f.readlines()
         for i in range(len(peps_data)):
             peps_data[i] = peps_data[i].strip('\n')
-        # 读取靶点蛋白质二级结构信息
+        
         with open(f'data_prepare/{task}/protein.out.ss', 'r') as f:
             prot_data = f.readlines()
         for i in range(len(prot_data)):
             prot_data[i] = prot_data[i].strip('\n')
-        # 靶点蛋白序列
+        
         prot_seq = protein
-        # 靶点蛋白二级结构信息
+        
         prot_concat_seq = ""
         for j in range(len(prot_seq)):
             if j < len(prot_seq) - 1:
                 prot_concat_seq = prot_concat_seq + prot_seq[j] + prot_data[1][j] + ','
             else:
                 prot_concat_seq = prot_concat_seq + prot_seq[j] + prot_data[1][j]
-        # 多肽序列
+        
         filename = f'data_prepare/{task}/amps.fasta'
         iterator = SeqIO.parse(filename,'fasta')
         seqs = []
         for record in iter(iterator):
             seqs.append(record)
-        # 多肽二级结构信息
+        
         pep_concat_seq = ""
         for i in range(len(seqs)):
             for j in range(len(seqs[i].seq)):
@@ -1209,13 +1189,13 @@ class HydrAMPGenerator:
             tsv_w.writerow([prot_seq, seqs[i].seq, pep_concat_seq, prot_concat_seq])
             pep_concat_seq = ""
         wf.close()
-#############################################step2: 计算目标蛋白的pssm矩阵#######################################################
+#############################################step2: get pssm matrix of the target protein #######################################################
         prot_pssm_dict = {}   
-        # 调用命令行计算多序列比对结果(pssm)
+        
         if not os.path.exists(f'data_prepare/{task}/target_protein.pssm'):
-            os.system(f"psiblast -query /geniusland/home/liuxianliang1/code/PepZOO_v2/data_prepare/{task}/target_protein.fasta -db /geniusland/dataset/uniprot/uniref90/uniref90.fasta -num_iterations 3 -out_ascii_pssm data_prepare/{task}/target_protein.pssm")
-        # 解析结果
-        with open(f'/geniusland/home/liuxianliang1/code/PepZOO_v2/data_prepare/{task}/target_protein.pssm','r') as rf:
+            os.system(f"psiblast -query data_prepare/{task}/target_protein.fasta -db /geniusland/dataset/uniprot/uniref90/uniref90.fasta -num_iterations 3 -out_ascii_pssm data_prepare/{task}/target_protein.pssm")
+
+        with open(f'data_prepare/{task}/target_protein.pssm','r') as rf:
             data = rf.readlines()
         tmp = np.zeros((len(protein),20))
         for i in range(3, 3+len(protein)):
@@ -1229,12 +1209,12 @@ class HydrAMPGenerator:
                     break
         prot_pssm_dict[protein] = tmp
             
-#############################################step3: 计算内在紊乱度信息（intrinsic disorder tendencies）###################
+############################################# step3: get the intrinsic disorder tendencies ###################
         prot_intrinsic_dict = {}
         pep_intrinsic_dict = {}
-        # 多肽序列
+        # peptides
         for i in range(peps_len):
-            result = os.popen(f"python3 /geniusland/home/liuxianliang1/code/PepZOO_v2/tools/iupred2a/iupred2a.py -a /geniusland/home/liuxianliang1/code/PepZOO_v2/data_prepare/{task}/{i+1}.fasta long")
+            result = os.popen(f"python3 tools/iupred2a/iupred2a.py -a data_prepare/{task}/{i+1}.fasta long")
             res = result.read()
             long_val = res.splitlines()[0].split(',')
             long_list = np.zeros((len(long_val), 1))
@@ -1243,7 +1223,7 @@ class HydrAMPGenerator:
                 long_list[j][0] = float(long_val[j])
             long_list[j][0] = float(long_val[j].split(']')[0])
 
-            result = os.popen(f"python3 /geniusland/home/liuxianliang1/code/PepZOO_v2/tools/iupred2a/iupred2a.py -a /geniusland/home/liuxianliang1/code/PepZOO_v2/data_prepare/{task}/{i+1}.fasta short")
+            result = os.popen(f"python3 tools/iupred2a/iupred2a.py -a data_prepare/{task}/{i+1}.fasta short")
             res = result.read()
             short_val = res.splitlines()[0].split(',')
             short_list = np.zeros((len(short_val), 1))
@@ -1261,8 +1241,8 @@ class HydrAMPGenerator:
 
             results = np.concatenate((long_list, short_list, anchor_list), axis=1)
             pep_intrinsic_dict[peptides[i]] = results
-        # 靶点蛋白质
-        result = os.popen(f"python3 /geniusland/home/liuxianliang1/code/PepZOO_v2/tools/iupred2a/iupred2a.py -a /geniusland/home/liuxianliang1/code/PepZOO_v2/data_prepare/{task}/target_protein.fasta long")
+        # the target protein
+        result = os.popen(f"python3 tools/iupred2a/iupred2a.py -a data_prepare/{task}/target_protein.fasta long")
         res = result.read()
         long_val = res.splitlines()[0].split(',')
         long_list = np.zeros((len(long_val), 1))
@@ -1271,7 +1251,7 @@ class HydrAMPGenerator:
             long_list[j][0] = float(long_val[j])
         long_list[j][0] = float(long_val[j].split(']')[0])
 
-        result = os.popen(f"python3 /geniusland/home/liuxianliang1/code/PepZOO_v2/tools/iupred2a/iupred2a.py -a /geniusland/home/liuxianliang1/code/PepZOO_v2/data_prepare/{task}/target_protein.fasta short")
+        result = os.popen(f"python3 tools/iupred2a/iupred2a.py -a data_prepare/{task}/target_protein.fasta short")
         res = result.read()
         short_val = res.splitlines()[0].split(',')
         short_list = np.zeros((len(short_val), 1))
@@ -1288,7 +1268,7 @@ class HydrAMPGenerator:
         anchor_list[j][0] = float(anchor_val[j].split(']')[0])
         results = np.concatenate((long_list, short_list, anchor_list), axis=1)
         prot_intrinsic_dict[protein] = results
-##############################################特征拼接及预测#######################################################
+############################################## feature concatenation #######################################################
 
         protein_dense_feature_dict = np.concatenate((prot_pssm_dict[protein], prot_intrinsic_dict[protein]),axis=1)
         with open(f'data_prepare/{task}/protein_dense_feature_dict','wb') as f:
@@ -1361,7 +1341,6 @@ class HydrAMPGenerator:
                 feature_intrinsic = padding_intrinsic_disorder(prot_intrinsic_dict[seq], pad_prot_len)
                 feature_dense = np.concatenate((feature_pssm, feature_intrinsic), axis=1)
                 protein_dense_feature_dict[seq] = feature_dense
-
         f.close()
 
         print('load feature dict')
@@ -1400,245 +1379,10 @@ class HydrAMPGenerator:
         preds = np.array(preds)                
         return preds
 
-    def binding_optimization(self, peptides: List[str], protein: str, bindding_model, seed: int, n_attempts: int =100, **kwargs):
-        """
-        Optimized new peptides toward better binding score with the target protein based on input peptides
-        @param peptides: peptides that form a template for further processing
-        @param seed:
-        @param kwargs:additional boolean arguments for filtering. This include
-        """
-        # 设置随机种子
-        set_seed(seed)
-         # 序列数目
-        block_size = len(peptides)
-        padded_sequences = du_sequence.pad(du_sequence.to_one_hot(peptides)).reshape(-1, 25)
-        # 保存多肽序列，用于计算毒性分数
-        f = open('peptides_binding.fasta', 'w')
-        for i in range(len(peptides)):
-            f.write('>' + str(i)+'\n')
-            f.write(peptides[i]+'\n')
-        f.close()
-        #  计算原始多肽序列与靶点蛋白质（SARS-CoV-2 S protein）的结合亲和力分数
-        binding_score = self.binding_predict(peptides, protein, bindding_model, 'binding')
-        # 计算原始多肽序列的毒性
-        # Parameter initialization or assigning variable for command level arguments
-        Sequence= 'peptides_binding.fasta'        # Input variable      
-        # Threshold 
-        Threshold= 0.38
-        #------------------ Read input file ---------------------
-        with open(Sequence) as f:
-                records = f.read()
-        records = records.split('>')[1:]
-        seqid = []
-        seq = []
-        for fasta in records:
-            array = fasta.split('\n')
-            name, sequence = array[0].split()[0], re.sub('[^ARNDCQEGHILKMFPSTWYV-]', '', ''.join(array[1:]).upper())
-            seqid.append(name)
-            seq.append(sequence)
-        if len(seqid) == 0:
-            f=open(Sequence,"r")
-            data1 = f.readlines()
-            for each in data1:
-                seq.append(each.replace('\n',''))
-            for i in range (1,len(seq)+1):
-                seqid.append("Seq_"+str(i))
-
-        seqid_1 = list(map(">{}".format, seqid))
-        CM = pd.concat([pd.DataFrame(seqid_1),pd.DataFrame(seq)],axis=1)
-        CM.to_csv("Sequence_1",header=False,index=None,sep="\n")
-        f.close()
-        #======================= Prediction Module start from here =====================
-        merci = 'tools/toxinpred3/merci/MERCI_motif_locator.pl'
-        motifs_p = 'tools/toxinpred3/motifs/pos_motif.txt'
-        motifs_n = 'tools/toxinpred3/motifs/neg_motif.txt'
-        aac_comp(seq,'seq.aac')
-        os.system("perl -pi -e 's/,$//g' seq.aac")
-        dpc_comp(seq,'seq.dpc')
-        os.system("perl -pi -e 's/,$//g' seq.dpc")
-        prediction('seq.aac', 'seq.dpc', 'tools/toxinpred3/model/toxinpred3.0_model.pkl','seq.pred')
-        os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_p + " -o merci_p.txt")
-        os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_n + " -o merci_n.txt")
-        MERCI_Processor_p('merci_p.txt','merci_output_p.csv',seqid)
-        Merci_after_processing_p('merci_output_p.csv','merci_hybrid_p.csv')
-        MERCI_Processor_n('merci_n.txt','merci_output_n.csv',seqid)
-        Merci_after_processing_n('merci_output_n.csv','merci_hybrid_n.csv')
-        hybrid('seq.pred',seqid,'merci_hybrid_p.csv','merci_hybrid_n.csv',Threshold,'final_output')
-        df44 = pd.read_csv('final_output')
-        df44.loc[df44['Hybrid Score'] > 1, 'Hybrid Score'] = 1
-        df44.loc[df44['Hybrid Score'] < 0, 'Hybrid Score'] = 0
-        toxic_score = df44['Hybrid Score'].tolist()
-        os.remove('seq.aac')
-        os.remove('seq.dpc')
-        os.remove('seq.pred')
-        os.remove('final_output')
-        os.remove('merci_hybrid_p.csv')
-        os.remove('merci_hybrid_n.csv')
-        os.remove('merci_output_p.csv')
-        os.remove('merci_output_n.csv')
-        os.remove('merci_p.txt')
-        os.remove('merci_n.txt')
-        os.remove('Sequence_1')
-        # 追加写入结果
-        f = open('result_binding.txt', 'a')
-        f.write('original\n')
-        f.write('ID'+'\t'+'sequence'+'\t'+'binding score'+'\t'+'toxic score'+'\n')
-        for j in range(block_size):
-            f.write(str(j+1)+'\t'+peptides[j]+'\t'+str(binding_score[j])+'\t'+str(toxic_score[j])+'\n')
-        f.write('optimized\n')
-        f.close()
-        # 序列的embedding
-        z = self._encoder.predict(padded_sequences, verbose=1, batch_size=80000)
-        z = torch.from_numpy(z)
-        # 解码器的条件输入
-        amp_condition = mic_condition = np.ones((len(z), 1))
-        # 获取学习率
-        base_lr = kwargs['lr']
-        # 零阶优化超参数
-        beta = kwargs['beta']
-        q = kwargs['Q']
-        variance = kwargs['variance']
-        # 优化器
-        adam = torch.optim.Adam([z], lr=base_lr)
-        # 零阶优化过程
-        for i in range(n_attempts):
-            # 获取随机扰动向量
-            u = np.random.normal(0, variance, size=(q, len(z), LATENT_DIM)).astype('float32')
-            # 正则化
-            u = beta * (u / np.linalg.norm(u, axis=-1, keepdims=True))
-            # 解码器条件输入
-            amp_conditions = mic_conditions = np.ones((q, len(z), 1))
-            conditioned = np.concatenate((z+u, amp_conditions, mic_conditions), axis=-1).reshape(-1, LATENT_DIM+2)
-            # 将扰动后的embedding解码为序列
-            decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
-            peps = np.argmax(decoded, axis=-1)
-            peps = np.array([translate_peptide(x) for x in peps])
-            # 将序列保存为fasta文件，用于matlab计算FEGS特征
-            f = open('peptides_binding.fasta', 'w')
-            for j in range(len(peps)):
-                f.write('>' + str(j)+'\n')
-                f.write(peps[j]+'\n')
-            f.close()
-            # 获取扰动序列的结合亲和力值
-            binding_score_neighbors = self.binding_predict(peps, protein, bindding_model, 'binding')
-            # 计算零阶梯度
-            grads = np.zeros((len(z), LATENT_DIM))
-            for k in range(q):
-                for j in range(len(z)):
-                    grads[j] += beta * (float)(binding_score[j] - binding_score_neighbors[k*len(z)+j]) * u[k][j]
-            z.grad = torch.from_numpy(grads.astype('float32'))
-            # 使用零阶梯度更新embedding
-            adam.step()
-
-            # 准备解码器的输入（embedding+条件）
-            conditioned = np.hstack([
-                z,
-                amp_condition,
-                mic_condition,
-            ])
-            # 解码
-            decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
-            peps= np.argmax(decoded, axis=-1)        
-            peps = np.array([translate_peptide(x) for x in peps])
-            f = open('peptides_binding.fasta', 'w')
-            for j in range(len(peps)):
-                f.write('>' + str(j)+'\n')
-                f.write(peps[j]+'\n')
-            f.close()
-            # 获取当前优化序列的toxicity值
-            with open(Sequence) as f:
-                    records = f.read()
-            records = records.split('>')[1:]
-            seqid = []
-            seq = []
-            for fasta in records:
-                array = fasta.split('\n')
-                name, sequence = array[0].split()[0], re.sub('[^ARNDCQEGHILKMFPSTWYV-]', '', ''.join(array[1:]).upper())
-                seqid.append(name)
-                seq.append(sequence)
-            if len(seqid) == 0:
-                f=open(Sequence,"r")
-                data1 = f.readlines()
-                for each in data1:
-                    seq.append(each.replace('\n',''))
-                for i in range (1,len(seq)+1):
-                    seqid.append("Seq_"+str(i))
-
-            seqid_1 = list(map(">{}".format, seqid))
-            CM = pd.concat([pd.DataFrame(seqid_1),pd.DataFrame(seq)],axis=1)
-            CM.to_csv("Sequence_1",header=False,index=None,sep="\n")
-            f.close()
-            #======================= Prediction Module start from here =====================
-            merci = 'tools/toxinpred3/merci/MERCI_motif_locator.pl'
-            motifs_p = 'tools/toxinpred3/motifs/pos_motif.txt'
-            motifs_n = 'tools/toxinpred3/motifs/neg_motif.txt'
-            aac_comp(seq,'seq.aac')
-            os.system("perl -pi -e 's/,$//g' seq.aac")
-            dpc_comp(seq,'seq.dpc')
-            os.system("perl -pi -e 's/,$//g' seq.dpc")
-            prediction('seq.aac', 'seq.dpc', 'tools/toxinpred3/model/toxinpred3.0_model.pkl','seq.pred')
-            os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_p + " -o merci_p.txt")
-            os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_n + " -o merci_n.txt")
-            MERCI_Processor_p('merci_p.txt','merci_output_p.csv',seqid)
-            Merci_after_processing_p('merci_output_p.csv','merci_hybrid_p.csv')
-            MERCI_Processor_n('merci_n.txt','merci_output_n.csv',seqid)
-            Merci_after_processing_n('merci_output_n.csv','merci_hybrid_n.csv')
-            hybrid('seq.pred',seqid,'merci_hybrid_p.csv','merci_hybrid_n.csv',Threshold,'final_output')
-            df44 = pd.read_csv('final_output')
-            df44.loc[df44['Hybrid Score'] > 1, 'Hybrid Score'] = 1
-            df44.loc[df44['Hybrid Score'] < 0, 'Hybrid Score'] = 0
-            toxic_score = df44['Hybrid Score'].tolist()
-            os.remove('seq.aac')
-            os.remove('seq.dpc')
-            os.remove('seq.pred')
-            os.remove('final_output')
-            os.remove('merci_hybrid_p.csv')
-            os.remove('merci_hybrid_n.csv')
-            os.remove('merci_output_p.csv')
-            os.remove('merci_output_n.csv')
-            os.remove('merci_p.txt')
-            os.remove('merci_n.txt')
-            os.remove('Sequence_1')
-            # 获取当前优化序列的结合亲和力值
-            binding_score = self.binding_predict(peps, protein, bindding_model, 'binding')
-            # 追加写入结果
-            f = open('result_binding.txt', 'a')
-            f.write(f'iter{i+1}'+'\n')
-            f.write('ID'+'\t' + 'sequence'+'\t' + 'binding score'+'\t' + 'toxic score'+'\n')
-            for j in range(block_size):
-                f.write(str(j+1) + '\t' + peps[j] + '\t' + str(binding_score[j]) + '\t' + str(toxic_score[j]) + '\n')
-            f.close()
-
-    def toxicity_optimization(self, peptides: List[str], protein: str, bindding_model, seed: int, n_attempts: int =100, **kwargs):
-        """
-        Optimized new peptides toward lower toxicity based on input peptides
-        @param peptides: peptides that form a template for further processing
-        @param seed:
-        @param kwargs:additional boolean arguments for zeroth order optimization. This include
-        -
-        """
-        # 设置随机种子
-        set_seed(seed)
-        # 保存序列为fasta文件
-        f = open('peptides_4_toxic.fasta', 'w')
-        for i in range(len(peptides)):
-            f.write('>' + str(i)+'\n')
-            f.write(peptides[i]+'\n')
-        f.close()
-        # 序列数目
-        block_size = len(peptides)
-        padded_sequences = du_sequence.pad(du_sequence.to_one_hot(peptides)).reshape(-1, 25)
-
-        # 计算多肽序列的毒性
-        # Parameter initialization or assigning variable for command level arguments
-        Sequence= 'peptides_4_toxic.fasta'        # Input variable      
-        # Threshold 
-        Threshold= 0.38
-        #------------------ Read input file ---------------------
-        # f=open(Sequence,"r")
-        # len1 = f.read().count('>')
-        # f.close()
-        with open(Sequence) as f:
+    # predict the toxicity of given peptides
+    def toxicity_predict(self, seq_file, Threshold):
+        # read the sequences from file
+        with open(seq_file) as f:
             records = f.read()
         records = records.split('>')[1:]
         seqid = []
@@ -1649,17 +1393,17 @@ class HydrAMPGenerator:
             seqid.append(name)
             seq.append(sequence)
         if len(seqid) == 0:
-            f=open(Sequence,"r")
+            f=open(seq_file,"r")
             data1 = f.readlines()
             for each in data1:
                 seq.append(each.replace('\n',''))
             for i in range (1,len(seq)+1):
                 seqid.append("Seq_"+str(i))
-
         seqid_1 = list(map(">{}".format, seqid))
         CM = pd.concat([pd.DataFrame(seqid_1),pd.DataFrame(seq)],axis=1)
         CM.to_csv("Sequence_1",header=False,index=None,sep="\n")
         f.close()
+
         #======================= Prediction Module start from here =====================
         merci = 'tools/toxinpred3/merci/MERCI_motif_locator.pl'
         motifs_p = 'tools/toxinpred3/motifs/pos_motif.txt'
@@ -1691,593 +1435,371 @@ class HydrAMPGenerator:
         os.remove('merci_p.txt')
         os.remove('merci_n.txt')
         os.remove('Sequence_1')
-        # 获取序列的结合分数
-        binding_score = self.binding_predict(peptides, protein, bindding_model, 'toxicity')
-        # 追加写入结果
-        f = open('result_toxic.txt', 'a')
-        f.write('original\n')
-        f.write('ID'+'\t'+'Peptide'+'\t'+'toxic score'+'\t'+'binding score'+'\n')
-        for j in range(block_size):
-            f.write(str(j+1)+'\t'+peptides[j]+'\t'+str(toxic_pre[j])+'\t'+str(binding_score[j])+'\n')
-        f.write('optimized\n')
-        f.close()
-        # 序列的embedding
-        z = self._encoder.predict(padded_sequences, verbose=1, batch_size=80000)
-        z = torch.from_numpy(z)
-        # 解码器的条件输入
-        amp_condition = mic_condition = np.ones((len(z), 1))
-        # 获取学习率
-        base_lr = kwargs['lr']
-        # 零阶优化超参数
-        beta = kwargs['beta']
-        q = kwargs['Q']
-        variance = kwargs['variance']
-        # 优化器
-        adam = torch.optim.Adam([z], lr=base_lr)
-        # 零阶优化过程
-        for i in range(n_attempts):
-            # 获取随机扰动向量
-            u = np.random.normal(0, variance, size=(q, len(z), LATENT_DIM)).astype('float32')
-            # 正则化
-            u = beta * (u / np.linalg.norm(u, axis=-1, keepdims=True))
-            # 解码器条件输入
-            amp_conditions = mic_conditions = np.ones((q, len(z), 1))
-            conditioned = np.concatenate((z+u, amp_conditions, mic_conditions), axis=-1).reshape(-1, LATENT_DIM+2)
-            # 将扰动后的embedding解码为序列
-            decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
-            peps = np.argmax(decoded, axis=-1)
-            peps = np.array([translate_peptide(x) for x in peps])
-            # 将扰动序列保存为fasta文件
-            f = open('peptides_4_toxic.fasta', 'w')
-            for j in range(len(peps)):
-                f.write('>' + str(j)+'\n')
-                f.write(peps[j]+'\n')
-            f.close()
-            # 获取扰动序列的toxicity值
-            #------------------ Read input file ---------------------
-            with open(Sequence) as f:
-                    records = f.read()
-            records = records.split('>')[1:]
-            seqid = []
-            seq = []
-            for fasta in records:
-                array = fasta.split('\n')
-                name, sequence = array[0].split()[0], re.sub('[^ARNDCQEGHILKMFPSTWYV-]', '', ''.join(array[1:]).upper())
-                seqid.append(name)
-                seq.append(sequence)
-            if len(seqid) == 0:
-                f=open(Sequence,"r")
-                data1 = f.readlines()
-                for each in data1:
-                    seq.append(each.replace('\n',''))
-                for i in range (1,len(seq)+1):
-                    seqid.append("Seq_"+str(i))
+        return toxic_pre
 
-            seqid_1 = list(map(">{}".format, seqid))
-            CM = pd.concat([pd.DataFrame(seqid_1),pd.DataFrame(seq)],axis=1)
-            CM.to_csv("Sequence_1",header=False,index=None,sep="\n")
-            f.close()
-            #======================= Prediction Module start from here =====================
-            merci = 'tools/toxinpred3/merci/MERCI_motif_locator.pl'
-            motifs_p = 'tools/toxinpred3/motifs/pos_motif.txt'
-            motifs_n = 'tools/toxinpred3/motifs/neg_motif.txt'
-            aac_comp(seq,'seq.aac')
-            os.system("perl -pi -e 's/,$//g' seq.aac")
-            dpc_comp(seq,'seq.dpc')
-            os.system("perl -pi -e 's/,$//g' seq.dpc")
-            prediction('seq.aac', 'seq.dpc', 'tools/toxinpred3/model/toxinpred3.0_model.pkl','seq.pred')
-            os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_p + " -o merci_p.txt")
-            os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_n + " -o merci_n.txt")
-            MERCI_Processor_p('merci_p.txt','merci_output_p.csv',seqid)
-            Merci_after_processing_p('merci_output_p.csv','merci_hybrid_p.csv')
-            MERCI_Processor_n('merci_n.txt','merci_output_n.csv',seqid)
-            Merci_after_processing_n('merci_output_n.csv','merci_hybrid_n.csv')
-            hybrid('seq.pred',seqid,'merci_hybrid_p.csv','merci_hybrid_n.csv',Threshold,'final_output')
-            df44 = pd.read_csv('final_output')
-            df44.loc[df44['Hybrid Score'] > 1, 'Hybrid Score'] = 1
-            df44.loc[df44['Hybrid Score'] < 0, 'Hybrid Score'] = 0
-            toxic_neighbors = df44['Hybrid Score'].tolist()
-            os.remove('seq.aac')
-            os.remove('seq.dpc')
-            os.remove('seq.pred')
-            os.remove('final_output')
-            os.remove('merci_hybrid_p.csv')
-            os.remove('merci_hybrid_n.csv')
-            os.remove('merci_output_p.csv')
-            os.remove('merci_output_n.csv')
-            os.remove('merci_p.txt')
-            os.remove('merci_n.txt')
-            os.remove('Sequence_1')
-            # 计算零阶梯度
-            grads = np.zeros((len(z), LATENT_DIM))
-            for k in range(q):
-                for j in range(len(z)):
-                    grads[j] += beta * (float)(toxic_neighbors[k*len(z)+j] - toxic_pre[j]) * u[k][j]
-            z.grad = torch.from_numpy(grads.astype('float32'))
-            # 使用零阶梯度更新embedding
-            adam.step()
-
-            # 准备解码器的输入（embedding+条件）
-            conditioned = np.hstack([
-                z,
-                amp_condition,
-                mic_condition,
-            ])
-            # 解码
-            decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
-            peps= np.argmax(decoded, axis=-1)        
-            peps = np.array([translate_peptide(x) for x in peps])
-            f = open('peptides_4_toxic.fasta', 'w')
-            for j in range(len(peps)):
-                f.write('>' + str(j)+'\n')
-                f.write(peps[j]+'\n')
-            f.close()
-
-            # 获取当前优化序列的toxicity值
-            with open(Sequence) as f:
-                    records = f.read()
-            records = records.split('>')[1:]
-            seqid = []
-            seq = []
-            for fasta in records:
-                array = fasta.split('\n')
-                name, sequence = array[0].split()[0], re.sub('[^ARNDCQEGHILKMFPSTWYV-]', '', ''.join(array[1:]).upper())
-                seqid.append(name)
-                seq.append(sequence)
-            if len(seqid) == 0:
-                f=open(Sequence,"r")
-                data1 = f.readlines()
-                for each in data1:
-                    seq.append(each.replace('\n',''))
-                for i in range (1,len(seq)+1):
-                    seqid.append("Seq_"+str(i))
-
-            seqid_1 = list(map(">{}".format, seqid))
-            CM = pd.concat([pd.DataFrame(seqid_1),pd.DataFrame(seq)],axis=1)
-            CM.to_csv("Sequence_1",header=False,index=None,sep="\n")
-            f.close()
-            #======================= Prediction Module start from here =====================
-            merci = 'tools/toxinpred3/merci/MERCI_motif_locator.pl'
-            motifs_p = 'tools/toxinpred3/motifs/pos_motif.txt'
-            motifs_n = 'tools/toxinpred3/motifs/neg_motif.txt'
-            aac_comp(seq,'seq.aac')
-            os.system("perl -pi -e 's/,$//g' seq.aac")
-            dpc_comp(seq,'seq.dpc')
-            os.system("perl -pi -e 's/,$//g' seq.dpc")
-            prediction('seq.aac', 'seq.dpc', 'tools/toxinpred3/model/toxinpred3.0_model.pkl','seq.pred')
-            os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_p + " -o merci_p.txt")
-            os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_n + " -o merci_n.txt")
-            MERCI_Processor_p('merci_p.txt','merci_output_p.csv',seqid)
-            Merci_after_processing_p('merci_output_p.csv','merci_hybrid_p.csv')
-            MERCI_Processor_n('merci_n.txt','merci_output_n.csv',seqid)
-            Merci_after_processing_n('merci_output_n.csv','merci_hybrid_n.csv')
-            hybrid('seq.pred',seqid,'merci_hybrid_p.csv','merci_hybrid_n.csv',Threshold,'final_output')
-            df44 = pd.read_csv('final_output')
-            df44.loc[df44['Hybrid Score'] > 1, 'Hybrid Score'] = 1
-            df44.loc[df44['Hybrid Score'] < 0, 'Hybrid Score'] = 0
-            toxic_pre = df44['Hybrid Score'].tolist()
-            os.remove('seq.aac')
-            os.remove('seq.dpc')
-            os.remove('seq.pred')
-            os.remove('final_output')
-            os.remove('merci_hybrid_p.csv')
-            os.remove('merci_hybrid_n.csv')
-            os.remove('merci_output_p.csv')
-            os.remove('merci_output_n.csv')
-            os.remove('merci_p.txt')
-            os.remove('merci_n.txt')
-            os.remove('Sequence_1')
-
-            # 获取当前优化序列的结合亲和力值
-            binding_score = self.binding_predict(peps, protein, bindding_model, 'toxicity')
-            # 追加写入结果
-            f = open('result_toxic.txt', 'a')
-            f.write(f'iter{i+1}'+'\n')
-            f.write('ID'+'\t'+'Peptide'+'\t'+'toxic score'+'\t'+'binding score'+'\n')
-            for j in range(block_size):
-                f.write(str(j+1) + '\t' + peps[j] +'\t' + str(toxic_pre[j]) + '\t' + str(binding_score[j]) + '\n')
-            f.close()
-
-    def binding_toxicity_optimization(self, peptides: List[str], protein: str, bindding_model, seed: int, n_attempts: int =100, **kwargs):
+    # the optimization of affinity
+    def affinity_optimization(self, peptides: List[str], protein: str, binding_model, seed: int, n_attempts: int =100, **kwargs):
         """
-        Optimized new peptides toward better binding score with the target protein based on input peptides
+        Optimized new peptides toward better affinity with the target protein based on input peptides
         @param peptides: peptides that form a template for further processing
-        @param seed:
-        @param kwargs:additional boolean arguments for filtering. This include
+        @param protein: target protein
+        @param binding_model: predict the binding score of peptides to the target protein
+        @param seed: random seed
         """
-        
-        # 设置随机种子
         set_seed(seed)
-         # 序列数目
+
         block_size = len(peptides)
         padded_sequences = du_sequence.pad(du_sequence.to_one_hot(peptides)).reshape(-1, 25)
-
-        f = open('peptides_binding_toxic.fasta', 'w')
+        # save peptides
+        f = open('data_prepare/affinity/peptides.fasta', 'w')
         for i in range(len(peptides)):
             f.write('>' + str(i)+'\n')
             f.write(peptides[i]+'\n')
         f.close()
 
-        #  计算原始多肽序列与靶点蛋白质（SARS-CoV-2 S protein）的结合亲和力分数
-        binding_score = self.binding_predict(peptides, protein, bindding_model, 'binding_toxicity')
-        # 计算原始多肽序列的毒性
-        # Parameter initialization or assigning variable for command level arguments
-        Sequence= 'peptides_binding_toxic.fasta'        # Input variable      
+        Sequence= 'data_prepare/affinity/peptides.fasta'     
         # Threshold 
         Threshold= 0.38
-        #------------------ Read input file ---------------------
-        with open(Sequence) as f:
-                records = f.read()
-        records = records.split('>')[1:]
-        seqid = []
-        seq = []
-        for fasta in records:
-            array = fasta.split('\n')
-            name, sequence = array[0].split()[0], re.sub('[^ARNDCQEGHILKMFPSTWYV-]', '', ''.join(array[1:]).upper())
-            seqid.append(name)
-            seq.append(sequence)
-        if len(seqid) == 0:
-            f=open(Sequence,"r")
-            data1 = f.readlines()
-            for each in data1:
-                seq.append(each.replace('\n',''))
-            for i in range (1,len(seq)+1):
-                seqid.append("Seq_"+str(i))
+        # get toxicity of peptides
+        toxic_score = self.toxicity_predict(Sequence, Threshold)
+        # get affinity of given peptides
+        binding_score = self.affinity_predict(peptides, protein, binding_model, 'affinity')
+        # save result
+        csv_wf = open('results/PepZOO/affinity/result.csv', 'w', encoding='utf-8')
+        csv_writer = csv.writer(csv_wf)
+        csv_writer.writerow(['ID','sequence', 'affinity', 'toxicity'])
 
-        seqid_1 = list(map(">{}".format, seqid))
-        CM = pd.concat([pd.DataFrame(seqid_1),pd.DataFrame(seq)],axis=1)
-        CM.to_csv("Sequence_1",header=False,index=None,sep="\n")
-        f.close()
-        #======================= Prediction Module start from here =====================
-        merci = 'tools/toxinpred3/merci/MERCI_motif_locator.pl'
-        motifs_p = 'tools/toxinpred3/motifs/pos_motif.txt'
-        motifs_n = 'tools/toxinpred3/motifs/neg_motif.txt'
-        aac_comp(seq,'seq.aac')
-        os.system("perl -pi -e 's/,$//g' seq.aac")
-        dpc_comp(seq,'seq.dpc')
-        os.system("perl -pi -e 's/,$//g' seq.dpc")
-        prediction('seq.aac', 'seq.dpc', 'tools/toxinpred3/model/toxinpred3.0_model.pkl','seq.pred')
-        os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_p + " -o merci_p.txt")
-        os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_n + " -o merci_n.txt")
-        MERCI_Processor_p('merci_p.txt','merci_output_p.csv',seqid)
-        Merci_after_processing_p('merci_output_p.csv','merci_hybrid_p.csv')
-        MERCI_Processor_n('merci_n.txt','merci_output_n.csv',seqid)
-        Merci_after_processing_n('merci_output_n.csv','merci_hybrid_n.csv')
-        hybrid('seq.pred',seqid,'merci_hybrid_p.csv','merci_hybrid_n.csv',Threshold,'final_output')
-        df44 = pd.read_csv('final_output')
-        df44.loc[df44['Hybrid Score'] > 1, 'Hybrid Score'] = 1
-        df44.loc[df44['Hybrid Score'] < 0, 'Hybrid Score'] = 0
-        toxic_pre = df44['Hybrid Score'].tolist()
-        os.remove('seq.aac')
-        os.remove('seq.dpc')
-        os.remove('seq.pred')
-        os.remove('final_output')
-        os.remove('merci_hybrid_p.csv')
-        os.remove('merci_hybrid_n.csv')
-        os.remove('merci_output_p.csv')
-        os.remove('merci_output_n.csv')
-        os.remove('merci_p.txt')
-        os.remove('merci_n.txt')
-        os.remove('Sequence_1')
-        # 追加写入结果
-        f = open('result_binding_toxic.txt', 'a')
-        f.write('original\n')
-        f.write('ID'+'\t'+'sequence'+'\t'+'binding score'+'\t'+'toxicity'+'\n')
+        txt_wf = open('results/PepZOO/affinity/result.txt', 'w')
+        txt_wf.write('original\n')
+        txt_wf.write('ID'+'\t'+'sequence'+'\t'+'affinity'+'\t'+'toxicity'+'\n')
+
         for j in range(block_size):
-            f.write(str(j+1)+'\t'+peptides[j]+'\t'+str(binding_score[j])+'\t'+str(toxic_pre[j])+'\n')
-        f.write('optimized\n')
-        f.close()
-        # 序列的embedding
+            csv_writer.writerow([f'{str(j+1)}', peptides[j], f'{str(binding_score[j])}', f'{str(toxic_score[j])}'])
+            txt_wf.write(str(j+1)+'\t'+peptides[j]+'\t'+str(binding_score[j])+'\t'+str(toxic_score[j])+'\n')
+
+        txt_wf.write('optimized\n')
+        txt_wf.close()
+        csv_wf.close()
+        # embedding
         z = self._encoder.predict(padded_sequences, verbose=1, batch_size=80000)
         z = torch.from_numpy(z)
-        # 解码器的条件输入
+        # condition
         amp_condition = mic_condition = np.ones((len(z), 1))
-        # 获取学习率
+        
         base_lr = kwargs['lr']
-        # 零阶优化超参数
         beta = kwargs['beta']
         q = kwargs['Q']
         variance = kwargs['variance']
-        # 优化器
+        
         adam = torch.optim.Adam([z], lr=base_lr)
-        # 零阶优化过程
+        
         for i in range(n_attempts):
-            # 获取随机扰动向量
+            
             u = np.random.normal(0, variance, size=(q, len(z), LATENT_DIM)).astype('float32')
-            # 正则化
             u = beta * (u / np.linalg.norm(u, axis=-1, keepdims=True))
-            # 解码器条件输入
+            
             amp_conditions = mic_conditions = np.ones((q, len(z), 1))
             conditioned = np.concatenate((z+u, amp_conditions, mic_conditions), axis=-1).reshape(-1, LATENT_DIM+2)
-            # 将扰动后的embedding解码为序列
             decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
             peps = np.argmax(decoded, axis=-1)
             peps = np.array([translate_peptide(x) for x in peps])
-            # 将序列保存为fasta文件，用于matlab计算FEGS特征
-            f = open('peptides_binding_toxic.fasta', 'w')
+            
+            f = open('data_prepare/affinity/peptides.fasta', 'w')
             for j in range(len(peps)):
                 f.write('>' + str(j)+'\n')
                 f.write(peps[j]+'\n')
             f.close()
-            # 获取扰动序列的toxicity值
-            #------------------ Read input file ---------------------
-            with open(Sequence) as f:
-                    records = f.read()
-            records = records.split('>')[1:]
-            seqid = []
-            seq = []
-            for fasta in records:
-                array = fasta.split('\n')
-                name, sequence = array[0].split()[0], re.sub('[^ARNDCQEGHILKMFPSTWYV-]', '', ''.join(array[1:]).upper())
-                seqid.append(name)
-                seq.append(sequence)
-            if len(seqid) == 0:
-                f=open(Sequence,"r")
-                data1 = f.readlines()
-                for each in data1:
-                    seq.append(each.replace('\n',''))
-                for i in range (1,len(seq)+1):
-                    seqid.append("Seq_"+str(i))
+            
+            binding_score_neighbors = self.affinity_predict(peps, protein, binding_model, 'affinity')
+            # compute the zeroth order gradient
+            grads = np.zeros((len(z), LATENT_DIM))
+            for k in range(q):
+                for j in range(len(z)):
+                    grads[j] += beta * (float)(binding_score[j] - binding_score_neighbors[k*len(z)+j]) * u[k][j]
+            z.grad = torch.from_numpy(grads.astype('float32'))
+            # update embedding
+            adam.step()
+           
+            conditioned = np.hstack([z, amp_condition, mic_condition])
+            decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
+            peps= np.argmax(decoded, axis=-1)        
+            peps = np.array([translate_peptide(x) for x in peps])
 
-            seqid_1 = list(map(">{}".format, seqid))
-            CM = pd.concat([pd.DataFrame(seqid_1),pd.DataFrame(seq)],axis=1)
-            CM.to_csv("Sequence_1",header=False,index=None,sep="\n")
+            f = open('data_prepare/affinity/peptides.fasta', 'w')
+            for j in range(len(peps)):
+                f.write('>' + str(j)+'\n')
+                f.write(peps[j]+'\n')
             f.close()
-            #======================= Prediction Module start from here =====================
-            merci = 'tools/toxinpred3/merci/MERCI_motif_locator.pl'
-            motifs_p = 'tools/toxinpred3/motifs/pos_motif.txt'
-            motifs_n = 'tools/toxinpred3/motifs/neg_motif.txt'
-            aac_comp(seq,'seq.aac')
-            os.system("perl -pi -e 's/,$//g' seq.aac")
-            dpc_comp(seq,'seq.dpc')
-            os.system("perl -pi -e 's/,$//g' seq.dpc")
-            prediction('seq.aac', 'seq.dpc', 'tools/toxinpred3/model/toxinpred3.0_model.pkl','seq.pred')
-            os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_p + " -o merci_p.txt")
-            os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_n + " -o merci_n.txt")
-            MERCI_Processor_p('merci_p.txt','merci_output_p.csv',seqid)
-            Merci_after_processing_p('merci_output_p.csv','merci_hybrid_p.csv')
-            MERCI_Processor_n('merci_n.txt','merci_output_n.csv',seqid)
-            Merci_after_processing_n('merci_output_n.csv','merci_hybrid_n.csv')
-            hybrid('seq.pred',seqid,'merci_hybrid_p.csv','merci_hybrid_n.csv',Threshold,'final_output')
-            df44 = pd.read_csv('final_output')
-            df44.loc[df44['Hybrid Score'] > 1, 'Hybrid Score'] = 1
-            df44.loc[df44['Hybrid Score'] < 0, 'Hybrid Score'] = 0
-            toxic_neighbors = df44['Hybrid Score'].tolist()
-            os.remove('seq.aac')
-            os.remove('seq.dpc')
-            os.remove('seq.pred')
-            os.remove('final_output')
-            os.remove('merci_hybrid_p.csv')
-            os.remove('merci_hybrid_n.csv')
-            os.remove('merci_output_p.csv')
-            os.remove('merci_output_n.csv')
-            os.remove('merci_p.txt')
-            os.remove('merci_n.txt')
-            os.remove('Sequence_1')
-            # 获取扰动序列的结合亲和力值
-            binding_score_neighbor = self.binding_predict(peps, protein, bindding_model, 'binding_toxicity')
-            # 计算零阶梯度
+            
+            toxic_score = self.toxicity_predict(Sequence, Threshold)
+            binding_score = self.affinity_predict(peps, protein, binding_model, 'affinity')
+            # save result
+            csv_wf = open('results/PepZOO/affinity/result.csv', 'a', encoding='utf-8')
+            csv_writer = csv.writer(csv_wf)
+
+            txt_wf = open('results/PepZOO/affinity/result.txt', 'a')
+            txt_wf.write(f'iter{i+1}'+'\n')
+            txt_wf.write('ID'+'\t' + 'sequence'+'\t' + 'affinity'+'\t' + 'toxicity'+'\n')
+            for j in range(block_size):
+                csv_writer.writerow([f'{str(j+1)}', peps[j], f'{str(binding_score[j])}', f'{str(toxic_score[j])}'])
+                txt_wf.write(str(j+1) + '\t' + peps[j] + '\t' + str(binding_score[j]) + '\t' + str(toxic_score[j]) + '\n')
+            txt_wf.close()
+            csv_wf.close()
+
+    # the optimization of toxicity
+    def toxicity_optimization(self, peptides: List[str], protein: str, binding_model, seed: int, n_attempts: int =40, **kwargs):
+        """
+        Optimized new peptides toward lower toxicity based on input peptides
+        @param peptides: peptides that form a template for further processing
+        @param protein: target protein
+        @param binding_model: model to predict the affinity of peptides to the target protein
+        @param seed: random seed
+        @param n_attempts: how many iterations to run
+        """
+        set_seed(seed)
+        # save peptides for toxicity prediction
+        f = open('data_prepare/toxicity/peptides.fasta', 'w')
+        for i in range(len(peptides)):
+            f.write('>' + str(i)+'\n')
+            f.write(peptides[i]+'\n')
+        f.close()
+
+        block_size = len(peptides)
+        padded_sequences = du_sequence.pad(du_sequence.to_one_hot(peptides)).reshape(-1, 25)
+        
+        Sequence= 'data_prepare/toxicity/peptides.fasta'     
+        # Threshold 
+        Threshold= 0.38
+
+        # get the toxicity of peptides
+        toxic_pre = self.toxicity_predict(Sequence, Threshold)
+        # get the affinity of peptides to the target protein
+        binding_score = self.affinity_predict(peptides, protein, binding_model, 'toxicity')
+        # save results
+        csv_wf = open('results/PepZOO/toxicity/result.csv', 'w', encoding='utf-8')
+        csv_writer = csv.writer(csv_wf)
+        csv_writer.writerow(['ID','sequence', 'affinity', 'toxicity'])
+
+        txt_wf = open('results/PepZOO/toxicity/result.txt', 'w')
+        txt_wf.write('original\n')
+        txt_wf.write('ID'+'\t'+'Peptide'+'\t'+'affinity'+'\t'+'toxicity'+'\n')
+
+        for j in range(block_size):
+            csv_writer.writerow([f'{str(j+1)}', peptides[j], f'{str(binding_score[j])}', f'{str(toxic_pre[j])}'])
+            txt_wf.write(str(j+1)+'\t'+peptides[j]+'\t'+str(binding_score[j])+'\t'+str(toxic_pre[j])+'\n')
+
+        txt_wf.write('optimized\n')
+        txt_wf.close()
+        csv_wf.close()
+        
+        z = self._encoder.predict(padded_sequences, verbose=1, batch_size=80000)
+        z = torch.from_numpy(z)
+        
+        amp_condition = mic_condition = np.ones((len(z), 1))
+        
+        base_lr = kwargs['lr']
+        beta = kwargs['beta']
+        q = kwargs['Q']
+        variance = kwargs['variance']
+        
+        adam = torch.optim.Adam([z], lr=base_lr)
+        
+        for i in range(n_attempts):
+            
+            u = np.random.normal(0, variance, size=(q, len(z), LATENT_DIM)).astype('float32')
+            u = beta * (u / np.linalg.norm(u, axis=-1, keepdims=True))
+            
+            amp_conditions = mic_conditions = np.ones((q, len(z), 1))
+            conditioned = np.concatenate((z+u, amp_conditions, mic_conditions), axis=-1).reshape(-1, LATENT_DIM+2)
+            decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
+            peps = np.argmax(decoded, axis=-1)
+            peps = np.array([translate_peptide(x) for x in peps])
+            
+            f = open('data_prepare/toxicity/peptides.fasta', 'w')
+            for j in range(len(peps)):
+                f.write('>' + str(j)+'\n')
+                f.write(peps[j]+'\n')
+            f.close()
+            
+            # get the toxicity of peptides
+            toxic_neighbors = self.toxicity_predict(Sequence, Threshold)
+            # initial the zeroth-order gradient
+            grads = np.zeros((len(z), LATENT_DIM))
+            # compute the zeroth-order gradient
+            for k in range(q):
+                for j in range(len(z)):
+                    grads[j] += beta * (float)(toxic_neighbors[k*len(z)+j] - toxic_pre[j]) * u[k][j]
+            z.grad = torch.from_numpy(grads.astype('float32'))
+            # update
+            adam.step()
+
+            conditioned = np.hstack([z, amp_condition, mic_condition])
+            decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
+            peps= np.argmax(decoded, axis=-1)        
+            peps = np.array([translate_peptide(x) for x in peps])
+
+            f = open('data_prepare/toxicity/peptides.fasta', 'w')
+            for j in range(len(peps)):
+                f.write('>' + str(j)+'\n')
+                f.write(peps[j]+'\n')
+            f.close()
+
+            toxic_pre = self.toxicity_predict(Sequence, Threshold)
+            binding_score = self.affinity_predict(peps, protein, binding_model, 'toxicity')
+            # save results
+            csv_wf = open('results/PepZOO/toxicity/result.csv', 'a', encoding='utf-8')
+            csv_writer = csv.writer(csv_wf)
+
+            txt_wf = open('results/PepZOO/toxicity/result.txt', 'a')
+            txt_wf.write(f'iter{i+1}'+'\n')
+            txt_wf.write('ID'+'\t'+'Peptide'+'\t'+'affinity'+'\t'+'toxicity'+'\n')
+
+            for j in range(block_size):
+                csv_writer.writerow([f'{str(j+1)}', peps[j], f'{str(binding_score[j])}', f'{str(toxic_pre[j])}'])
+                txt_wf.write(str(j+1) + '\t' + peps[j] + '\t' + str(binding_score[j]) + '\t' + str(toxic_pre[j]) + '\n')
+
+            txt_wf.close()
+            csv_wf.close()
+
+    # the optimization of affinity and toxicity
+    def affinity_toxicity_optimization(self, peptides: List[str], protein: str, binding_model, seed: int, n_attempts: int =100, **kwargs):
+        """
+        Optimized new peptides toward better affinity and lower toxicity based on input peptides
+        @param peptides: peptides that form a template for further processing
+        @param seed:
+        """
+        
+        set_seed(seed)
+        block_size = len(peptides)
+        padded_sequences = du_sequence.pad(du_sequence.to_one_hot(peptides)).reshape(-1, 25)
+
+        f = open('data_prepare/affinity_toxicity/peptides.fasta', 'w')
+        for i in range(len(peptides)):
+            f.write('>' + str(i)+'\n')
+            f.write(peptides[i]+'\n')
+        f.close()
+
+        binding_score = self.affinity_predict(peptides, protein, binding_model, 'affinity_toxicity')
+
+        Sequence= 'data_prepare/affinity_toxicity/peptides.fasta'     
+        # Threshold 
+        Threshold= 0.38
+        # get the toxicity of peptides
+        toxic_pre = self.affinity_predict(Sequence, Threshold)      
+        # save results
+        csv_wf = open('results/PepZOO/affinity_toxicity/result.csv', 'w', encoding='utf-8')
+        csv_writer = csv.writer(csv_wf)
+        csv_writer.writerow(['ID','sequence', 'affinity', 'toxicity'])
+
+        txt_wf = open('results/PepZOO/affinity_toxicity/result.txt', 'w')
+        txt_wf.write('original\n')
+        txt_wf.write('ID'+'\t'+'sequence'+'\t'+'affinity'+'\t'+'toxicity'+'\n')
+
+        for j in range(block_size):
+            csv_writer.writerow([f'{str(j+1)}', peptides[j], f'{str(binding_score[j])}', f'{str(toxic_pre[j])}'])
+            txt_wf.write(str(j+1)+'\t'+peptides[j]+'\t'+str(binding_score[j])+'\t'+str(toxic_pre[j])+'\n')
+        txt_wf.write('optimized\n')
+        txt_wf.close()
+        
+        z = self._encoder.predict(padded_sequences, verbose=1, batch_size=80000)
+        z = torch.from_numpy(z)
+        
+        amp_condition = mic_condition = np.ones((len(z), 1))
+        
+        base_lr = kwargs['lr']
+        beta = kwargs['beta']
+        q = kwargs['Q']
+        variance = kwargs['variance']
+        
+        adam = torch.optim.Adam([z], lr=base_lr)
+        
+        for i in range(n_attempts):
+            
+            u = np.random.normal(0, variance, size=(q, len(z), LATENT_DIM)).astype('float32')
+            u = beta * (u / np.linalg.norm(u, axis=-1, keepdims=True))
+            
+            amp_conditions = mic_conditions = np.ones((q, len(z), 1))
+            conditioned = np.concatenate((z+u, amp_conditions, mic_conditions), axis=-1).reshape(-1, LATENT_DIM+2)
+            decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
+            peps = np.argmax(decoded, axis=-1)
+            peps = np.array([translate_peptide(x) for x in peps])
+            
+            f = open('data_prepare/affinity_toxicity/peptides.fasta', 'w')
+            for j in range(len(peps)):
+                f.write('>' + str(j)+'\n')
+                f.write(peps[j]+'\n')
+            f.close()
+            
+            toxic_neighbors = self.affinity_predict(Sequence, Threshold)
+            binding_score_neighbor = self.affinity_predict(peps, protein, binding_model, 'affinity_toxicity')
+            
             grads = np.zeros((len(z), LATENT_DIM))
             for k in range(q):
                 for j in range(len(z)):
                     grads[j] += beta * (float)(binding_score[j] - binding_score_neighbor[k*len(z)+j] + toxic_neighbors[k*len(z)+j] - toxic_pre[j]) * u[k][j]
             z.grad = torch.from_numpy(grads.astype('float32'))
-            # 使用零阶梯度更新embedding
+            
             adam.step()
 
-            # 准备解码器的输入（embedding+条件）
-            conditioned = np.hstack([
-                z,
-                amp_condition,
-                mic_condition,
-            ])
-            # 解码
+            conditioned = np.hstack([z, amp_condition, mic_condition])
             decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
             peps= np.argmax(decoded, axis=-1)        
             peps = np.array([translate_peptide(x) for x in peps])
-            f = open('peptides_binding_toxic.fasta', 'w')
+
+            f = open('data_prepare/affinity_toxicity/peptides.fasta', 'w')
             for j in range(len(peps)):
                 f.write('>' + str(j)+'\n')
                 f.write(peps[j]+'\n')
             f.close()
-            # 获取当前优化序列的toxicity值
-            with open(Sequence) as f:
-                    records = f.read()
-            records = records.split('>')[1:]
-            seqid = []
-            seq = []
-            for fasta in records:
-                array = fasta.split('\n')
-                name, sequence = array[0].split()[0], re.sub('[^ARNDCQEGHILKMFPSTWYV-]', '', ''.join(array[1:]).upper())
-                seqid.append(name)
-                seq.append(sequence)
-            if len(seqid) == 0:
-                f=open(Sequence,"r")
-                data1 = f.readlines()
-                for each in data1:
-                    seq.append(each.replace('\n',''))
-                for i in range (1,len(seq)+1):
-                    seqid.append("Seq_"+str(i))
+            
+            toxic_pre = self.affinity_predict(Sequence, Threshold)
+            binding_score = self.affinity_predict(peps, protein, binding_model, 'affinity_toxicity')
+            # save results
+            csv_wf = open('results/PepZOO/affinity_toxicity/result.csv', 'a', encoding='utf-8')
+            csv_writer = csv.writer(csv_wf)
 
-            seqid_1 = list(map(">{}".format, seqid))
-            CM = pd.concat([pd.DataFrame(seqid_1),pd.DataFrame(seq)],axis=1)
-            CM.to_csv("Sequence_1",header=False,index=None,sep="\n")
-            f.close()
-            #======================= Prediction Module start from here =====================
-            merci = 'tools/toxinpred3/merci/MERCI_motif_locator.pl'
-            motifs_p = 'tools/toxinpred3/motifs/pos_motif.txt'
-            motifs_n = 'tools/toxinpred3/motifs/neg_motif.txt'
-            aac_comp(seq,'seq.aac')
-            os.system("perl -pi -e 's/,$//g' seq.aac")
-            dpc_comp(seq,'seq.dpc')
-            os.system("perl -pi -e 's/,$//g' seq.dpc")
-            prediction('seq.aac', 'seq.dpc', 'tools/toxinpred3/model/toxinpred3.0_model.pkl','seq.pred')
-            os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_p + " -o merci_p.txt")
-            os.system("perl " + merci + " -p " + "Sequence_1" +  " -i " + motifs_n + " -o merci_n.txt")
-            MERCI_Processor_p('merci_p.txt','merci_output_p.csv',seqid)
-            Merci_after_processing_p('merci_output_p.csv','merci_hybrid_p.csv')
-            MERCI_Processor_n('merci_n.txt','merci_output_n.csv',seqid)
-            Merci_after_processing_n('merci_output_n.csv','merci_hybrid_n.csv')
-            hybrid('seq.pred',seqid,'merci_hybrid_p.csv','merci_hybrid_n.csv',Threshold,'final_output')
-            df44 = pd.read_csv('final_output')
-            df44.loc[df44['Hybrid Score'] > 1, 'Hybrid Score'] = 1
-            df44.loc[df44['Hybrid Score'] < 0, 'Hybrid Score'] = 0
-            toxic_pre = df44['Hybrid Score'].tolist()
-            os.remove('seq.aac')
-            os.remove('seq.dpc')
-            os.remove('seq.pred')
-            os.remove('final_output')
-            os.remove('merci_hybrid_p.csv')
-            os.remove('merci_hybrid_n.csv')
-            os.remove('merci_output_p.csv')
-            os.remove('merci_output_n.csv')
-            os.remove('merci_p.txt')
-            os.remove('merci_n.txt')
-            os.remove('Sequence_1')
-            # 获取当前优化序列的结合亲和力值
-            binding_score = self.binding_predict(peps, protein, bindding_model, 'binding_toxicity')
-            # 追加写入结果
-            f = open('result_binding_toxic.txt', 'a')
-            f.write(f'iter{i+1}'+'\n')
-            f.write('ID'+'\t'+'sequence'+'\t'+'binding score'+'\t'+'toxicity'+'\n')
+            txt_wf = open('results/PepZOO/affinity_toxicity/result.txt', 'a')
+            txt_wf.write(f'iter{i+1}'+'\n')
+            txt_wf.write('ID'+'\t'+'sequence'+'\t'+'affinity'+'\t'+'toxicity'+'\n')
+
             for j in range(block_size):
-                f.write(str(j+1) + '\t' + peps[j] + '\t' + str(binding_score[j]) + '\t' + str(toxic_pre[j])+'\n')
-            f.close()
+                csv_writer.writerow([f'{str(j+1)}', peps[j], f'{str(binding_score[j])}', f'{str(toxic_pre[j])}'])
+                txt_wf.write(str(j+1) + '\t' + peps[j] + '\t' + str(binding_score[j]) + '\t' + str(toxic_pre[j])+'\n')
 
-    def all_optimization(self, peptides: List[str], protein: str, seed: int,  model, n_attempts: int =100, **kwargs):
-        """
-        Optimized new peptides toward better binding score with the target protein, better amp and mic value based on input peptides
-        @param peptides: peptides that form a template for further processing
-        @param seed:
-        @param kwargs:additional boolean arguments for filtering. This include
-        - filter_positive_clusters
-        - filter_repetitive_clusters or filter_hydrophobic_clusters
-        - filter_cysteins
-        - filter_known_amps
-        """
+            txt_wf.close()
+            csv_wf.close()
 
-        # 设置随机种子
-        set_seed(seed)
-        # 序列数目
-        block_size = len(peptides)
-        device = torch.device('cpu')
-
-        origin_score = self.binding_predict(peptides, protein, model, 'all')
-        padded_sequences = du_sequence.pad(du_sequence.to_one_hot(peptides)).reshape(-1, 25)
-        amp = self._amp_classifier.predict(padded_sequences, verbose=1, batch_size=80000)
-        mic = self._mic_classifier.predict(padded_sequences, verbose=1, batch_size=80000)
-        z = self._encoder.predict(padded_sequences, verbose=1, batch_size=80000)
-        z = torch.from_numpy(z)
-
-        amp_condition = mic_condition = np.ones((len(z), 1))
-        base_lr = kwargs['lr']
-        beta = kwargs['beta']
-        q = kwargs['Q']
-        variance = kwargs['variance']
-        adam = torch.optim.Adam([z], lr=base_lr)
-        f = open('result.txt', 'a')
-        f.write('original\n')
-        for j in range(block_size):
-            f.write(str(j)+'\t'+peptides[j]+'\t'+str(origin_score[j])+'\t'+str(amp[j][0])+'\t'+str(mic[j][0]))
-            f.write('\n')
-        f.write('optimized\n')
-        f.close()
-        for i in range(n_attempts):
-            u = np.random.normal(0, variance, size=(q, len(z), LATENT_DIM)).astype('float32')
-            u = beta * (u / np.linalg.norm(u, axis=-1, keepdims=True))
-
-            amp_conditions = mic_conditions = np.ones((q, len(z), 1))
-            conditioned = np.concatenate((z+u, amp_conditions, mic_conditions), axis=-1).reshape(-1, LATENT_DIM+2)
-            decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
-            peps = np.argmax(decoded, axis=-1)
-            new_amp = self._amp_classifier.predict(peps, verbose=1, batch_size=80000)
-            new_mic = self._mic_classifier.predict(peps, verbose=1, batch_size=80000)
-            peps = np.array([translate_peptide(x) for x in peps])
-            new_score = self.binding_predict(peps, protein, model, 'all')
-            grads = np.zeros((len(z), LATENT_DIM))
-            for k in range(q):
-                for j in range(len(z)):
-                    grads[j] += beta * (float)(
-                    (origin_score[j] - new_score[k*len(z)+j])
-                    + (amp[j][0]-new_amp[k*len(z)+j][0]) 
-                    + (mic[j][0]-new_mic[k*len(z)+j][0])
-                    ) * u[k][j]
-
-            z.grad = torch.from_numpy(grads.astype('float32'))
-            adam.step()
-
-            # 保存结果
-            conditioned = np.hstack([
-                z,
-                amp_condition,
-                mic_condition,
-            ])
-            decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
-            peps= np.argmax(decoded, axis=-1)        
-            amp = self._amp_classifier.predict(peps, verbose=1, batch_size=80000)
-            mic = self._mic_classifier.predict(peps, verbose=1, batch_size=80000)
-            peps = np.array([translate_peptide(x) for x in peps])        
-            score = self.binding_predict(peps, protein, model, 'all')
-            f = open('result.txt', 'a')
-            f.write(f'iter{i}')
-            f.write('\n')
-            for j in range(block_size):
-                f.write(str(j) + '\t' + peps[j] + '\t' + str(score[j]) + '\t' + str(amp[j][0]) + '\t' + str(mic[j][0]))
-                f.write('\n')
-            f.close()
-
-    def basic_analogue_generation(self, sequences: List[str], seed: int,
+    # the generation of CVAE model
+    def cvae_generation(self, sequences: List[str], seed: int,
                             n_attempts: int = 100, temp: float = 5.0, **kwargs) -> Dict[Any, Dict[str, Any]]:
         """
         Generates new peptides based on input sequences
         @param sequences: peptides that form a template for further processing
-        @param n_attempts: how many times a single latent vector is decoded - for normal Softmax models it should be set
-        to 1 as every decoding call returns the same peptide.
+        @param n_attempts: how many times a single latent vector is decoded
         @param temp: creativity parameter. Controls latent vector sigma scaling
-        @param seed:
-        @param kwargs:additional boolean arguments for filtering. This include
-        - filter_positive_clusters
-        - filter_repetitive_clusters or filter_hydrophobic_clusters
-        - filter_cysteins
-        - filter_known_amps
-
-        @return: dict, each key corresponds to a single input sequence.
+        @param seed: random seed
         """
         set_seed(seed)
 
         block_size = len(sequences)
         padded_sequences = du_sequence.pad(du_sequence.to_one_hot(sequences))
         sigmas = self.get_sigma(padded_sequences)
+
         amp_org = self._amp_classifier.predict(padded_sequences, verbose=1, batch_size=80000)
         mic_org = self._mic_classifier.predict(padded_sequences, verbose=1, batch_size=80000)
+
         padded_sequences = np.vstack([padded_sequences] * n_attempts).reshape(-1, 25)
         z = self._encoder.predict(padded_sequences, verbose=1, batch_size=80000)
         amp_stacked = np.vstack([amp_org] * n_attempts)
         mic_stacked = np.vstack([mic_org] * n_attempts)
         props = calculate_physchem_prop(sequences)
         # save result
-        basic_wf = open('results/amp_mic/Basic/result.csv', 'a', encoding='utf-8')
-        basic_zoo_wf = open('results/amp_mic/BasicZOO/result.csv', 'a', encoding='utf-8')
-        basic_writer = csv.writer(basic_wf)
-        basic_zoo_writer = csv.writer(basic_zoo_wf)
-        basic_writer.writerow(['description','sequence', 'amp', 'mic', 'length', 'hydrophobicity',
-                            'hydrophobic_moment', 'charge', 'isoelectric_point'])
-        basic_zoo_writer.writerow(['description','sequence', 'amp', 'mic', 'length', 'hydrophobicity',
+        cvae_wf = open('results/CVAE/result.csv', 'a', encoding='utf-8')
+        cvae_writer = csv.writer(cvae_wf)
+        cvae_writer.writerow(['description','sequence', 'amp', 'mic', 'length', 'hydrophobicity',
                             'hydrophobic_moment', 'charge', 'isoelectric_point'])
         for i in range(block_size):
-            basic_writer.writerow([
-                f'{i}_original',
-                sequences[i], 
-                amp_org[i][0], 
-                mic_org[i][0], 
-                props['length'][i],
-                props['hydrophobicity'][i], 
-                props['hydrophobic_moment'][i], 
-                props['charge'][i], 
-                props['isoelectric_point'][i]
-            ])
-
-            basic_zoo_writer.writerow([
+            cvae_writer.writerow([
                 f'{i}_original',
                 sequences[i], 
                 amp_org[i][0], 
@@ -2312,8 +1834,6 @@ class HydrAMPGenerator:
 
         new_peptides = np.array([translate_peptide(x) for x in new_peptides])
         new_peptides, new_amp, new_mic, better = slice_blocks((new_peptides, new_amp, new_mic, better), block_size)
-        # mask = get_filtering_mask(sequences=new_peptides, filtering_options=kwargs)
-        # mask &= better
                 
         filtered_peptides = _dispose_into_bucket(better, sequences, new_peptides, new_amp, new_mic, n_attempts,
                                                  block_size)
@@ -2322,8 +1842,8 @@ class HydrAMPGenerator:
         for i in range(block_size):
             if filtered_peptides[i] != None:
                 for j in range(len(filtered_peptides[i])):
-                    basic_writer.writerow([
-                        f'{i}_BasicOpt',
+                    cvae_writer.writerow([
+                        f'{i}_CVAE',
                         filtered_peptides[i][j]['sequence'],
                         filtered_peptides[i][j]['amp'],
                         filtered_peptides[i][j]['mic'], 
@@ -2333,104 +1853,40 @@ class HydrAMPGenerator:
                         filtered_peptides[i][j]['charge'], 
                         filtered_peptides[i][j]['isoelectric_point']
                     ])
+        cvae_wf.close()
 
-        padded_sequences = du_sequence.pad(du_sequence.to_one_hot(sequences)).reshape(-1, 25)
-        z = self._encoder.predict(padded_sequences, verbose=1, batch_size=80000)
-        amp_condition = mic_condition = np.ones((len(padded_sequences),1))
-        
-        z = torch.from_numpy(z)
-        base_lr = kwargs['lr']
-        beta = kwargs['beta']
-        Q = kwargs['Q']
-        variance = kwargs['variance']
-        adam = torch.optim.Adam([z], lr=base_lr)
-
-        attempts = n_attempts
-        seqs_dic = [{} for i in range(block_size)]
-        for t in tqdm(range(attempts)):
-            # # compute pesudo gradient
-            z.grad = torch.from_numpy(self.estimate_gradient(z, Q, beta, variance).astype('float32'))
-            # update
-            adam.step()
-
-            conditioned = np.hstack([
-                z,
-                amp_condition,
-                mic_condition,
-            ])
-
-            decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
-            seq = np.argmax(decoded, axis=-1)
-            
-            new_amp = self._amp_classifier.predict(seq, verbose=1, batch_size=80000)
-            new_mic = self._mic_classifier.predict(seq, verbose=1, batch_size=80000)
-
-            seq = np.array([translate_peptide(x) for x in seq])
-
-            better = new_amp > amp_org
-            better = better & (new_mic > mic_org)
-
-            better = better.flatten()
-
-            new_peptides, new_amp, new_mic, better = slice_blocks((seq, new_amp, new_mic, better), block_size)
-            filtered_peptides = _dispose_into_bucket(better, sequences, new_peptides, new_amp, new_mic, 1, block_size)
-            filtered_peptides = self._encapsulate_sequential_results(filtered_peptides)      
-              
-            for i in range(block_size):
-                if filtered_peptides[i] != None:
-                    if filtered_peptides[i][0]['sequence'] not in seqs_dic[i].keys():
-                        basic_zoo_writer.writerow([
-                            f'{i}_BasicZOOOpt',
-                            filtered_peptides[i][0]['sequence'], 
-                            filtered_peptides[i][0]['amp'],
-                            filtered_peptides[i][0]['mic'], 
-                            filtered_peptides[i][0]['length'], 
-                            filtered_peptides[i][0]['hydrophobicity'], 
-                            filtered_peptides[i][0]['hydrophobic_moment'], 
-                            filtered_peptides[i][0]['charge'], 
-                            filtered_peptides[i][0]['isoelectric_point']
-                        ])
-                    seqs_dic[i][filtered_peptides[i][0]['sequence']] = i
-        basic_wf.close()
-        basic_zoo_wf.close()
-
-    def pepcvae_analogue_generation(self, sequences: List[str], seed: int,
+    # the generation of PepCVAE model
+    def pepcvae_generation(self, sequences: List[str], seed: int,
                             n_attempts: int = 100, temp: float = 5.0, **kwargs) -> Dict[Any, Dict[str, Any]]:
         """
         Generates new peptides based on input sequences
         @param sequences: peptides that form a template for further processing
-        @param n_attempts: how many times a single latent vector is decoded - for normal Softmax models it should be set
-        to 1 as every decoding call returns the same peptide.
+        @param n_attempts: how many times a single latent vector is decoded
         @param temp: creativity parameter. Controls latent vector sigma scaling
-        @param seed:
-        @param kwargs:additional boolean arguments for filtering. This include
-        - filter_positive_clusters
-        - filter_repetitive_clusters or filter_hydrophobic_clusters
-        - filter_cysteins
-        - filter_known_amps
-
-        @return: dict, each key corresponds to a single input sequence.
+        @param seed: random seed
         """
         set_seed(seed)
 
         block_size = len(sequences)
         padded_sequences = du_sequence.pad(du_sequence.to_one_hot(sequences))
+
         sigmas = self.get_sigma(padded_sequences)
+        
         amp_org = self._amp_classifier.predict(padded_sequences, verbose=1, batch_size=80000)
         mic_org = self._mic_classifier.predict(padded_sequences, verbose=1, batch_size=80000)
+
         padded_sequences = np.vstack([padded_sequences] * n_attempts).reshape(-1, 25)
         z = self._encoder.predict(padded_sequences, verbose=1, batch_size=80000)
+
         amp_stacked = np.vstack([amp_org] * n_attempts)
         mic_stacked = np.vstack([mic_org] * n_attempts)
+        # physicochemical properties
         props = calculate_physchem_prop(sequences)
+
         # save result
-        pepcvae_wf = open('results/amp_mic/PepCVAE/result.csv', 'a', encoding='utf-8')
-        pepcvae_zoo_wf = open('results/amp_mic/PepCVAEZOO/result.csv', 'a', encoding='utf-8')
+        pepcvae_wf = open('results/PepCVAE/result.csv', 'a', encoding='utf-8')
         pepcvae_writer = csv.writer(pepcvae_wf)
-        pepcvae_zoo_writer = csv.writer(pepcvae_zoo_wf)
         pepcvae_writer.writerow(['description','sequence', 'amp', 'mic', 'length', 'hydrophobicity',
-                            'hydrophobic_moment', 'charge', 'isoelectric_point'])
-        pepcvae_zoo_writer.writerow(['description','sequence', 'amp', 'mic', 'length', 'hydrophobicity',
                             'hydrophobic_moment', 'charge', 'isoelectric_point'])
         for i in range(block_size):
             pepcvae_writer.writerow([
@@ -2445,18 +1901,6 @@ class HydrAMPGenerator:
                 props['isoelectric_point'][i]
             ])
 
-            pepcvae_zoo_writer.writerow([
-                f'{i}_original',
-                sequences[i], 
-                amp_org[i][0], 
-                mic_org[i][0], 
-                props['length'][i],
-                props['hydrophobicity'][i], 
-                props['hydrophobic_moment'][i], 
-                props['charge'][i], 
-                props['isoelectric_point'][i]
-            ])
-
         noise = np.random.normal(loc=0, scale=temp * np.vstack([sigmas] * n_attempts), size=z.shape)
         encoded = z + noise
 
@@ -2480,8 +1924,7 @@ class HydrAMPGenerator:
 
         new_peptides = np.array([translate_peptide(x) for x in new_peptides])
         new_peptides, new_amp, new_mic, better = slice_blocks((new_peptides, new_amp, new_mic, better), block_size)
-        # mask = get_filtering_mask(sequences=new_peptides, filtering_options=kwargs)
-        # mask &= better
+
         filtered_peptides = _dispose_into_bucket(better, sequences, new_peptides, new_amp, new_mic, n_attempts,
                                                  block_size)
         filtered_peptides = self._encapsulate_sequential_results(filtered_peptides)
@@ -2490,7 +1933,7 @@ class HydrAMPGenerator:
             if filtered_peptides[i] != None:
                 for j in range(len(filtered_peptides[i])):
                     pepcvae_writer.writerow([
-                        f'{i}_PepCVAEOpt',
+                        f'{i}_PepCVAE',
                         filtered_peptides[i][j]['sequence'],
                         filtered_peptides[i][j]['amp'],
                         filtered_peptides[i][j]['mic'], 
@@ -2501,71 +1944,4 @@ class HydrAMPGenerator:
                         filtered_peptides[i][j]['isoelectric_point']
                     ])
 
-        # generation_result = {
-        #     'sequence': sequences,
-        #     'amp': amp_org.flatten().tolist(),
-        #     'mic': mic_org.flatten().tolist(),
-        #     'generated_sequences': filtered_peptides
-        # }
-        # generation_result.update(calculate_physchem_prop(sequences))
-        # return self._transpose_sequential_results(generation_result)
-
-        padded_sequences = du_sequence.pad(du_sequence.to_one_hot(sequences)).reshape(-1, 25)
-        z = self._encoder.predict(padded_sequences, verbose=1, batch_size=80000)
-        amp_condition = mic_condition = np.ones((len(padded_sequences),1))
-
-        z = torch.from_numpy(z)
-        base_lr = kwargs['lr']
-        beta = kwargs['beta']
-        Q = kwargs['Q']
-        variance = kwargs['variance']
-        adam = torch.optim.Adam([z], lr=base_lr)
-
-        attempts = n_attempts
-        seqs_dic = [{} for i in range(block_size)]
-        for t in tqdm(range(attempts)):
-            # # compute pesudo gradient
-            z.grad = torch.from_numpy(self.estimate_gradient(z, Q, beta, variance).astype('float32'))
-            # update
-            adam.step()
-
-            conditioned = np.hstack([
-                z,
-                amp_condition,
-                mic_condition,
-            ])
-
-            decoded = self._decoder.predict(conditioned, verbose=1, batch_size=80000)
-            seq = np.argmax(decoded, axis=-1)
-            
-            new_amp = self._amp_classifier.predict(seq, verbose=1, batch_size=80000)
-            new_mic = self._mic_classifier.predict(seq, verbose=1, batch_size=80000)
-
-            seq = np.array([translate_peptide(x) for x in seq])
-
-            better = new_amp > amp_org
-            better = better & (new_mic > mic_org)
-
-            better = better.flatten()
-
-            new_peptides, new_amp, new_mic, better = slice_blocks((seq, new_amp, new_mic, better), block_size)
-            filtered_peptides = _dispose_into_bucket(better, sequences, new_peptides, new_amp, new_mic, 1, block_size)
-            filtered_peptides = self._encapsulate_sequential_results(filtered_peptides)      
-              
-            for i in range(block_size):
-                if filtered_peptides[i] != None:
-                    if filtered_peptides[i][0]['sequence'] not in seqs_dic[i].keys():
-                        pepcvae_zoo_writer.writerow([
-                            f'{i}_PepCVAEZOOOpt',
-                            filtered_peptides[i][0]['sequence'], 
-                            filtered_peptides[i][0]['amp'],
-                            filtered_peptides[i][0]['mic'], 
-                            filtered_peptides[i][0]['length'], 
-                            filtered_peptides[i][0]['hydrophobicity'], 
-                            filtered_peptides[i][0]['hydrophobic_moment'], 
-                            filtered_peptides[i][0]['charge'], 
-                            filtered_peptides[i][0]['isoelectric_point']
-                        ])
-                    seqs_dic[i][filtered_peptides[i][0]['sequence']] = i
         pepcvae_wf.close()
-        pepcvae_zoo_wf.close()

@@ -10,6 +10,7 @@ setup(
     url='https://hydramp.mimuw.edu/',
     packages=find_packages(),
     install_requires=[
+        'torch~=2.0.0',
         'tensorflow~=2.2.1',
         'tensorflow-probability~=0.10.0',
         'Keras~=2.3.1',
@@ -17,16 +18,19 @@ setup(
         'Keras-Preprocessing~=1.1.2',
         'cloudpickle~=1.4.1',
         'numpy~=1.18.5',
-        'pandas~=1.1.4',
-        'scikit-learn~=0.23.2',
+        'pandas~=1.1.5',
+        'scikit-learn~=1.2.2',
         'modlamp~=4.2.3',
-        'matplotlib~=3.3.2',
+        'matplotlib~=3.3.4',
         'protobuf~=3.14.0',
-        'seaborn~=0.11.0',
-        'setuptools~=50.3.1',
-        'joblib~=0.17.0',
+        'seaborn~=0.11.2',
+        'setuptools~=58.0.0',
+        'joblib~=1.3.2',
         'argparse',
-        'tqdm~=4.51.0'
+        'tqdm~=4.51.0',
+        'torchsnooper',
+        'Bio',
+        'Levenshtein'
     ],
     setup_requires=['wheel']
 )
