@@ -45,7 +45,9 @@ torchsnooper
 Bio
 Levenshtein
 
-# 4. generate sequence
+# 4. download the required software (CAMP, iupred2a, SCRATCH-1D_1.2, toxinpred3) to run the affinity and toxicity optimization task, you should locate them in tools/
+
+# 5. generate sequence
 conda activate pepzoo
 cd PepZOO/run
 python run_amp.py 
