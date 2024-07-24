@@ -1685,7 +1685,7 @@ class HydrAMPGenerator:
         # Threshold 
         Threshold= 0.38
         # get the toxicity of peptides
-        toxic_pre = self.affinity_predict(Sequence, Threshold)      
+        toxic_pre = self.toxicity_predict(Sequence, Threshold)      
         # save results
         csv_wf = open('results/PepZOO/affinity_toxicity/result.csv', 'w', encoding='utf-8')
         csv_writer = csv.writer(csv_wf)
@@ -1730,7 +1730,7 @@ class HydrAMPGenerator:
                 f.write(peps[j]+'\n')
             f.close()
             
-            toxic_neighbors = self.affinity_predict(Sequence, Threshold)
+            toxic_neighbors = self.toxicity_predict(Sequence, Threshold)
             binding_score_neighbor = self.affinity_predict(peps, protein, binding_model, 'affinity_toxicity')
             
             grads = np.zeros((len(z), LATENT_DIM))
@@ -1752,7 +1752,7 @@ class HydrAMPGenerator:
                 f.write(peps[j]+'\n')
             f.close()
             
-            toxic_pre = self.affinity_predict(Sequence, Threshold)
+            toxic_pre = self.toxicity_predict(Sequence, Threshold)
             binding_score = self.affinity_predict(peps, protein, binding_model, 'affinity_toxicity')
             # save results
             csv_wf = open('results/PepZOO/affinity_toxicity/result.csv', 'a', encoding='utf-8')
