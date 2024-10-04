@@ -1,4 +1,0 @@
-<br />
-<b>Warning</b>:  filesize(): stat failed for download_data/DRAMP3.0_new/stalitity_amps.fasta in <b>/home/wwwroot/dramp/downloads/download.php</b> on line <b>7</b><br />
-<br />
-<b>Warning</b>:  readfile(download_data/DRAMP3.0_new/stalitity_amps.fasta): failed to open stream: No such file or directory in <b>/home/wwwroot/dramp/downloads/download.php</b> on line <b>9</b><br />
